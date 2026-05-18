@@ -473,61 +473,65 @@ const CLERK_PUBLISHABLE_KEY = 'pk_test_Y2FwaXRhbC10aWNrLTkxLmNsZXJrLmFjY291bnRzL
 
 (function loadClerkSDK() {
   const s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
-  s.onload = initClerk;
-  s.onerror = () => {
+  s.async = true;
+  s.crossOrigin = 'anonymous';
+  s.setAttribute('data-clerk-publishable-key', CLERK_PUBLISHABLE_KEY);
+  s.src = 'https://capital-tick-91.clerk.accounts.dev/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
+  s.type = 'text/javascript';
+  s.addEventListener('load', initClerk);
+  s.addEventListener('error', () => {
     document.getElementById('clerk-loading').textContent =
       'Could not load auth SDK. Check your internet connection.';
-  };
+  });
   document.head.appendChild(s);
 })();
 
 async function initClerk() {
-  const clerk = new window.Clerk(CLERK_PUBLISHABLE_KEY);
-  window.Clerk = clerk;
-  document.getElementById('clerk-loading').style.display = 'none';
-  await clerk.load({
-    appearance: {
-      variables: {
-        colorBackground:              '#10141c',
-        colorInputBackground:         '#161b26',
-        colorInputText:               '#e2e8f0',
-        colorText:                    '#e2e8f0',
-        colorTextSecondary:           '#64748b',
-        colorTextOnPrimaryBackground: '#ffffff',
-        colorPrimary:                 '#3b82f6',
-        colorDanger:                  '#ef4444',
-        borderRadius:                 '6px',
-        fontFamily:                   "'DM Sans', sans-serif",
-        fontFamilyButtons:            "'Space Mono', monospace",
-        fontSize:                     '13px',
-      },
-      elements: {
-        card:                       { background: '#10141c', border: '1px solid #1e2535', boxShadow: 'none', borderRadius: '12px' },
-        headerTitle:                { color: '#e2e8f0', fontFamily: "'Space Mono', monospace", letterSpacing: '2px' },
-        headerSubtitle:             { color: '#64748b' },
-        formButtonPrimary:          { background: '#3b82f6', fontFamily: "'Space Mono', monospace", letterSpacing: '1px' },
-        socialButtonsBlockButton:   { background: '#161b26', border: '1px solid #1e2535' },
-        socialButtonsBlockButtonText: { color: '#e2e8f0' },
-        dividerLine:                { background: '#1e2535' },
-        dividerText:                { color: '#64748b' },
-        footerActionLink:           { color: '#3b82f6' },
-        footerActionText:           { color: '#64748b' },
-        footer:                     { background: 'transparent' },
+  try {
+    await window.Clerk.load({
+      appearance: {
+        variables: {
+          colorBackground:              '#10141c',
+          colorInputBackground:         '#161b26',
+          colorInputText:               '#e2e8f0',
+          colorText:                    '#e2e8f0',
+          colorTextSecondary:           '#64748b',
+          colorTextOnPrimaryBackground: '#ffffff',
+          colorPrimary:                 '#3b82f6',
+          colorDanger:                  '#ef4444',
+          borderRadius:                 '6px',
+          fontFamily:                   "'DM Sans', sans-serif",
+          fontFamilyButtons:            "'Space Mono', monospace",
+          fontSize:                     '13px',
+        },
+        elements: {
+          card:                       { background: '#10141c', border: '1px solid #1e2535', boxShadow: 'none', borderRadius: '12px' },
+          headerTitle:                { color: '#e2e8f0', fontFamily: "'Space Mono', monospace", letterSpacing: '2px' },
+          headerSubtitle:             { color: '#64748b' },
+          formButtonPrimary:          { background: '#3b82f6', fontFamily: "'Space Mono', monospace", letterSpacing: '1px' },
+          socialButtonsBlockButton:   { background: '#161b26', border: '1px solid #1e2535' },
+          socialButtonsBlockButtonText: { color: '#e2e8f0' },
+          dividerLine:                { background: '#1e2535' },
+          dividerText:                { color: '#64748b' },
+          footerActionLink:           { color: '#3b82f6' },
+          footerActionText:           { color: '#64748b' },
+          footer:                     { background: 'transparent' },
+        }
       }
+    });
+    document.getElementById('clerk-loading').style.display = 'none';
+    if (window.Clerk.user) {
+      onSignIn(window.Clerk.user);
+    } else {
+      window.Clerk.mountSignIn(document.getElementById('clerk-sign-in'));
     }
-  });
-
-  if (clerk.user) {
-    onSignIn(clerk.user);
-  } else {
-    clerk.mountSignIn(document.getElementById('clerk-sign-in'));
+    window.Clerk.addListener(({ user }) => {
+      if (user && !currentUser) onSignIn(user);
+      else if (!user && currentUser) onSignOut();
+    });
+  } catch (e) {
+    document.getElementById('clerk-loading').textContent = 'Auth error: ' + e.message;
   }
-
-  clerk.addListener(({ user }) => {
-    if (user && !currentUser) onSignIn(user);
-    else if (!user && currentUser) onSignOut();
-  });
 }
 
 function onSignIn(user) {
