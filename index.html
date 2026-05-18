@@ -291,7 +291,10 @@ tr:hover td{background:var(--surface2)}
   <div class="panel-title">What-if simulator</div>
   <div class="panel-sub">Adjust assumptions · see projected Senate outcome in real time</div>
   <div class="card">
-    <div class="card-title">Scenario controls</div>
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      Scenario controls
+      <button class="pri-export-btn" onclick="exportScenarioCSV()">⬇ Export Scenario</button>
+    </div>
     <div class="slider-row"><div class="slider-label"><span>Youth turnout boost</span><span id="v1">+0%</span></div><input type="range" min="-10" max="20" value="0" id="s1" oninput="simUpdate()"></div>
     <div class="slider-row"><div class="slider-label"><span>Urban base enthusiasm</span><span id="v2">Neutral</span></div><input type="range" min="-3" max="3" value="0" step="1" id="s2" oninput="simUpdate()"></div>
     <div class="slider-row"><div class="slider-label"><span>Late-decider lean (D)</span><span id="v3">50%</span></div><input type="range" min="35" max="65" value="50" id="s3" oninput="simUpdate()"></div>
@@ -316,6 +319,10 @@ tr:hover td{background:var(--surface2)}
     <div class="csv-wrap"><table class="csv-table" id="csvTable"></table></div>
   </div>
   <div class="card" style="overflow-x:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="card-title" style="margin-bottom:0">Race data</div>
+      <button class="pri-export-btn" onclick="exportDistrictsCSV()">⬇ Export CSV</button>
+    </div>
     <table><thead><tr><th>State</th><th>D %</th><th>R %</th><th>Margin</th><th>Turnout</th><th>Swing</th><th>Status</th></tr></thead>
     <tbody id="districtBody"></tbody></table>
   </div>
@@ -334,7 +341,10 @@ tr:hover td{background:var(--surface2)}
     <div style="font-size:11px;color:var(--muted);margin-top:6px">Saves your current What-if sim slider settings</div>
   </div>
   <div class="card">
-    <div class="card-title">Saved scenarios</div>
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      Saved scenarios
+      <button class="pri-export-btn" onclick="exportAllScenariosCSV()">⬇ Export All CSV</button>
+    </div>
     <div id="scenariosList"><div style="color:var(--muted);font-size:12px;padding:8px 0">No saved scenarios yet. Set up a What-if simulation and save it here.</div></div>
   </div>
 </div>
@@ -380,7 +390,10 @@ tr:hover td{background:var(--surface2)}
     <div class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
         File summary
-        <button onclick="vfReset()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:2px 8px;border-radius:4px;font-size:10px;cursor:pointer">Replace file</button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="pri-export-btn" onclick="exportVoterFileCSV()">⬇ Export CSV</button>
+          <button onclick="vfReset()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:2px 8px;border-radius:4px;font-size:10px;cursor:pointer">Replace file</button>
+        </div>
       </div>
       <div id="vf-summary-body"></div>
     </div>
@@ -406,7 +419,7 @@ tr:hover td{background:var(--surface2)}
     <div class="card" id="vf-priority-card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
         Contact Priority List
-        <button class="pri-export-btn" onclick="exportPriorityCSV()">⬇ Export CSV</button>
+        <button class="pri-export-btn" onclick="exportPriorityCSV()">⬇ Export Full List</button>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Ranked by turnout gap · party alignment · district data · top 50 shown</div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
@@ -1270,6 +1283,73 @@ function renderVoterQuickBtns() {
   document.getElementById('vf-quick-btns').innerHTML = btns.map(b =>
     `<div class="qbtn" onclick="document.getElementById('vfQuestion').value=${JSON.stringify(b)};askVoterQuestion()">${b}</div>`
   ).join('');
+}
+
+// ── CSV EXPORT HELPERS ────────────────────────────────
+function _dlCSV(content, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type: 'text/csv' }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+const _csvDate = () => new Date().toISOString().slice(0, 10);
+
+function exportDistrictsCSV() {
+  const header = 'State,Abbr,D %,R %,Margin,Turnout,Swing,Status';
+  const rows = races.map(r => {
+    const m = (r.d - r.r).toFixed(1);
+    const margin = (+m > 0 ? 'D' : 'R') + '+' + Math.abs(+m);
+    const [, lbl] = STATUS_META[r.status] || ['', r.status];
+    return [r.state, r.abbr, r.d + '%', r.r + '%', margin, r.turn + '%', (r.swing > 0 ? '+' : '') + r.swing, lbl].join(',');
+  });
+  _dlCSV([header, ...rows].join('\n'), `opsfield-districts-${_csvDate()}.csv`);
+}
+
+function exportVoterFileCSV() {
+  if (!voterFileData) return;
+  const { rows, cols } = voterFileData;
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const dataRows = rows.map(row => cols.map(c => esc(row[c])).join(','));
+  _dlCSV([cols.join(','), ...dataRows].join('\n'), `opsfield-voterfile-${_csvDate()}.csv`);
+}
+
+function exportScenarioCSV() {
+  const s1 = +document.getElementById('s1').value;
+  const s2 = +document.getElementById('s2').value;
+  const s3 = +document.getElementById('s3').value;
+  const s4 = +document.getElementById('s4').value;
+  const s5 = +document.getElementById('s5').value;
+  const proj = document.getElementById('simSeats').textContent;
+  const note = document.getElementById('simNote').textContent;
+  const rows = [
+    'Parameter,Value,Display',
+    `Youth turnout boost,${s1},${(s1 >= 0 ? '+' : '') + s1}%`,
+    `Urban base enthusiasm,${s2},${ENTH[s2 + 3]}`,
+    `Late-decider lean (D),${s3},${s3}%`,
+    `Suburban shift (pp),${s4},${(s4 >= 0 ? '+' : '') + s4}`,
+    `Economic approval impact,${s5},${ECON[s5 + 3]}`,
+    '',
+    `Projected Dem seats,${proj},"${note}"`,
+  ];
+  _dlCSV(rows.join('\n'), `opsfield-scenario-${_csvDate()}.csv`);
+}
+
+async function exportAllScenariosCSV() {
+  const scenarios = await dbGet('get-scenarios');
+  if (!scenarios || !scenarios.length) { alert('No saved scenarios to export.'); return; }
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const header = 'Name,Youth Turnout,Urban Enthusiasm,Late-Decider Lean,Suburban Shift,Economic Impact,Created';
+  const rows = scenarios.map(s => [
+    esc(s.name || ''),
+    s.sliders?.s1 ?? '',
+    s.sliders?.s2 ?? '',
+    s.sliders?.s3 ?? '',
+    s.sliders?.s4 ?? '',
+    s.sliders?.s5 ?? '',
+    s.created_at ? new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
+  ].join(','));
+  _dlCSV([header, ...rows].join('\n'), `opsfield-scenarios-${_csvDate()}.csv`);
 }
 
 // ── CONTACT PRIORITY LIST ─────────────────────────────
