@@ -13,18 +13,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 
 /* AUTH */
 #authOverlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999}
-.auth-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px 28px;width:340px;text-align:center}
 .auth-logo{font-family:'Space Mono',monospace;font-size:15px;color:var(--accent);letter-spacing:3px;margin-bottom:4px}
-.auth-sub{font-size:12px;color:var(--muted);margin-bottom:24px}
-.auth-input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;margin-bottom:10px;transition:border .15s}
-.auth-input:focus{border-color:var(--accent)}
-.auth-btn{width:100%;background:var(--accent);color:#fff;border:none;padding:10px;border-radius:6px;font-size:13px;font-family:'Space Mono',monospace;cursor:pointer;letter-spacing:1px;transition:opacity .15s;margin-bottom:10px}
-.auth-btn:hover{opacity:.85}
-.auth-err{font-size:11px;color:var(--danger);margin-top:6px;display:none}
-.demo-accounts{margin-top:14px;text-align:left;border-top:1px solid var(--border);padding-top:14px}
-.demo-acct{font-size:11px;color:var(--muted);padding:4px 0;cursor:pointer;transition:color .1s}
-.demo-acct:hover{color:var(--accent)}
-.demo-acct span{color:var(--text);font-family:'Space Mono',monospace}
+.auth-sub{font-size:12px;color:var(--muted)}
 
 /* LAYOUT */
 .shell{display:grid;grid-template-rows:44px 1fr;height:100vh}
@@ -148,21 +138,13 @@ tr:hover td{background:var(--surface2)}
 
 <div class="tooltip" id="tooltip"></div>
 
-<!-- AUTH -->
+<!-- AUTH — Clerk handles sign-in/sign-up -->
 <div id="authOverlay">
-  <div class="auth-box">
-    <div class="auth-logo">⬡ OPSFIELD</div>
-    <div class="auth-sub">Campaign Operations Intelligence</div>
-    <input class="auth-input" id="authEmail" placeholder="Email" type="email">
-    <input class="auth-input" id="authPass" placeholder="Password" type="password">
-    <button class="auth-btn" onclick="doLogin()">SIGN IN →</button>
-    <div class="auth-err" id="authErr">Invalid credentials</div>
-    <div class="demo-accounts">
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">Demo accounts</div>
-      <div class="demo-acct" onclick="fillDemo('director@campaign.com','ops2026')"><span>director@campaign.com</span> / ops2026</div>
-      <div class="demo-acct" style="margin-top:4px" onclick="fillDemo('analyst@campaign.com','data2026')"><span>analyst@campaign.com</span> / data2026</div>
-      <div class="demo-acct" style="margin-top:4px" onclick="fillDemo('press@campaign.com','media2026')"><span>press@campaign.com</span> / media2026</div>
-    </div>
+  <div style="text-align:center">
+    <div class="auth-logo" style="font-size:18px;margin-bottom:6px">⬡ OPSFIELD</div>
+    <div class="auth-sub" style="margin-bottom:28px">Campaign Operations Intelligence</div>
+    <div id="clerk-sign-in"></div>
+    <div id="clerk-loading" class="mono" style="color:var(--muted);font-size:11px;margin-top:20px;letter-spacing:1px">LOADING...</div>
   </div>
 </div>
 
@@ -211,7 +193,7 @@ tr:hover td{background:var(--surface2)}
   <div class="nav-section" style="margin-top:6px">Key races</div>
   <div id="stateNav"></div>
   <div style="flex:1"></div>
-  <div style="padding:10px 12px;font-size:10px;color:var(--dim)">Opsfield v3.0 · Supabase</div>
+  <div style="padding:10px 12px;font-size:10px;color:var(--dim)">Opsfield v3.0 · Clerk + Supabase</div>
 </div>
 
 <!-- content -->
@@ -451,11 +433,6 @@ tr:hover td{background:var(--surface2)}
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
 // ── CONSTANTS ─────────────────────────────────────────
-const USERS={
-  'director@campaign.com':{pass:'ops2026',role:'Campaign Director',initials:'CD'},
-  'analyst@campaign.com':{pass:'data2026',role:'Data Analyst',initials:'DA'},
-  'press@campaign.com':{pass:'media2026',role:'Press Secretary',initials:'PS'}
-};
 const BASE_RACES=[
   {state:'Arizona',abbr:'AZ',fips:'04',d:48,r:52,turn:61,swing:-1.2,status:'tossup'},
   {state:'Nevada',abbr:'NV',fips:'32',d:51,r:49,turn:58,swing:+0.8,status:'lean-d'},
@@ -486,36 +463,111 @@ const ECON=['Very negative','Negative','Slightly neg','Neutral','Slightly pos','
 
 let currentUser=null,uploadedCSVData=null,chatHistory=[],charts={},mapLoaded=false,races=[];
 let apiKey=localStorage.getItem('opsfield_apikey')||'';
+let _appInitialized=false;
 
-// ── AUTH ──────────────────────────────────────────────
-function fillDemo(e,p){document.getElementById('authEmail').value=e;document.getElementById('authPass').value=p;}
-function doLogin(){
-  const e=document.getElementById('authEmail').value.trim().toLowerCase();
-  const p=document.getElementById('authPass').value;
-  const u=USERS[e];
-  if(u&&u.pass===p){
-    currentUser={email:e,...u};
-    document.getElementById('authOverlay').style.display='none';
-    document.getElementById('appShell').style.display='grid';
-    document.getElementById('userLabel').textContent=u.role;
-    document.getElementById('userAvatar').textContent=u.initials;
-    if(apiKey)document.getElementById('apiKeySetup').style.display='none';
-    init();
-    loadPersistedData();
-  } else {
-    const err=document.getElementById('authErr');
-    err.style.display='block';
-    setTimeout(()=>err.style.display='none',2500);
+// ── CLERK AUTH ────────────────────────────────────────
+// 1. Go to dashboard.clerk.com → create an app → copy your Publishable Key
+// 2. Replace the placeholder below with your actual key (pk_test_... or pk_live_...)
+// 3. Add CLERK_SECRET_KEY to your Vercel environment variables
+const CLERK_PUBLISHABLE_KEY = 'pk_test_Y2FwaXRhbC10aWNrLTkxLmNsZXJrLmFjY291bnRzLmRldiQ
+';
+
+(function loadClerkSDK() {
+  try {
+    // Derive the Clerk frontend API domain from the publishable key
+    const domain = atob(CLERK_PUBLISHABLE_KEY.split('_')[2]).replace(/\$$/, '');
+    const s = document.createElement('script');
+    s.src = `https://${domain}/npm/@clerk/clerk-js@latest/dist/clerk.browser.js`;
+    s.dataset.clerkPublishableKey = CLERK_PUBLISHABLE_KEY;
+    s.onload = initClerk;
+    s.onerror = () => {
+      document.getElementById('clerk-loading').textContent =
+        'Could not load auth. Check your CLERK_PUBLISHABLE_KEY.';
+    };
+    document.head.appendChild(s);
+  } catch(e) {
+    document.getElementById('clerk-loading').textContent = 'Invalid Clerk publishable key.';
   }
+})();
+
+async function initClerk() {
+  const clerk = window.Clerk;
+  document.getElementById('clerk-loading').style.display = 'none';
+  await clerk.load({
+    appearance: {
+      variables: {
+        colorBackground:              '#10141c',
+        colorInputBackground:         '#161b26',
+        colorInputText:               '#e2e8f0',
+        colorText:                    '#e2e8f0',
+        colorTextSecondary:           '#64748b',
+        colorTextOnPrimaryBackground: '#ffffff',
+        colorPrimary:                 '#3b82f6',
+        colorDanger:                  '#ef4444',
+        borderRadius:                 '6px',
+        fontFamily:                   "'DM Sans', sans-serif",
+        fontFamilyButtons:            "'Space Mono', monospace",
+        fontSize:                     '13px',
+      },
+      elements: {
+        card:                       { background: '#10141c', border: '1px solid #1e2535', boxShadow: 'none', borderRadius: '12px' },
+        headerTitle:                { color: '#e2e8f0', fontFamily: "'Space Mono', monospace", letterSpacing: '2px' },
+        headerSubtitle:             { color: '#64748b' },
+        formButtonPrimary:          { background: '#3b82f6', fontFamily: "'Space Mono', monospace", letterSpacing: '1px' },
+        socialButtonsBlockButton:   { background: '#161b26', border: '1px solid #1e2535' },
+        socialButtonsBlockButtonText: { color: '#e2e8f0' },
+        dividerLine:                { background: '#1e2535' },
+        dividerText:                { color: '#64748b' },
+        footerActionLink:           { color: '#3b82f6' },
+        footerActionText:           { color: '#64748b' },
+        footer:                     { background: 'transparent' },
+      }
+    }
+  });
+
+  if (clerk.user) {
+    onSignIn(clerk.user);
+  } else {
+    clerk.mountSignIn(document.getElementById('clerk-sign-in'));
+  }
+
+  clerk.addListener(({ user }) => {
+    if (user && !currentUser) onSignIn(user);
+    else if (!user && currentUser) onSignOut();
+  });
 }
-function doLogout(){
-  document.getElementById('appShell').style.display='none';
-  document.getElementById('authOverlay').style.display='flex';
-  currentUser=null;chatHistory=[];
-  document.getElementById('authPass').value='';
+
+function onSignIn(user) {
+  const email    = user.primaryEmailAddress?.emailAddress
+                || user.emailAddresses?.[0]?.emailAddress || '';
+  const fullName = user.fullName || user.firstName || email.split('@')[0];
+  const initials = fullName.split(/\s+/).map(n => n[0] || '').join('').toUpperCase().slice(0, 2) || '??';
+  currentUser = {
+    email,
+    role:    user.unsafeMetadata?.role || 'Campaign Staff',
+    initials,
+    name:    fullName,
+  };
+  document.getElementById('authOverlay').style.display = 'none';
+  document.getElementById('appShell').style.display    = 'grid';
+  document.getElementById('userLabel').textContent     = currentUser.role;
+  document.getElementById('userAvatar').textContent    = currentUser.initials;
+  if (apiKey) document.getElementById('apiKeySetup').style.display = 'none';
+  if (!_appInitialized) { _appInitialized = true; init(); }
+  loadPersistedData();
 }
-document.getElementById('authEmail').onkeydown=e=>{if(e.key==='Enter')document.getElementById('authPass').focus()};
-document.getElementById('authPass').onkeydown=e=>{if(e.key==='Enter')doLogin()};
+
+function onSignOut() {
+  document.getElementById('appShell').style.display   = 'none';
+  document.getElementById('authOverlay').style.display = 'flex';
+  currentUser  = null;
+  chatHistory  = [];
+  if (window.Clerk) window.Clerk.mountSignIn(document.getElementById('clerk-sign-in'));
+}
+
+function doLogout() {
+  window.Clerk ? window.Clerk.signOut() : onSignOut();
+}
 
 // ── API KEY ───────────────────────────────────────────
 function saveKey(){
@@ -582,7 +634,6 @@ async function fetchMarkets(){
         return kws.some(kw => t.includes(kw));
       });
       if (!match || match.demProb === null) return race;
-      // Blend: 60% polls, 40% prediction market
       const blendedD = +(race.d * 0.6 + match.demProb * 0.4).toFixed(1);
       return { ...race, d: blendedD, r: +(100-blendedD).toFixed(1), marketProb: match.demProb, marketUrl: match.url };
     });
@@ -855,25 +906,27 @@ function addTyping(){
 }
 
 // ── PERSISTENCE (Supabase via /api/db) ───────────────
-function dbHeaders(){
-  return {'Content-Type':'application/json','x-user-email':currentUser?.email||''};
+async function dbHeaders(){
+  const token = window.Clerk?.session ? await window.Clerk.session.getToken() : null;
+  const h = {'Content-Type':'application/json'};
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
 }
 async function dbGet(action){
   try{
-    const r=await fetch(`/api/db?action=${action}`,{headers:dbHeaders()});
+    const r=await fetch(`/api/db?action=${action}`,{headers:await dbHeaders()});
     return r.ok?await r.json():null;
   }catch{return null;}
 }
 async function dbPost(action,body){
   try{
-    const r=await fetch(`/api/db?action=${action}`,{method:'POST',headers:dbHeaders(),body:JSON.stringify(body)});
+    const r=await fetch(`/api/db?action=${action}`,{method:'POST',headers:await dbHeaders(),body:JSON.stringify(body)});
     return r.ok?await r.json():null;
   }catch{return null;}
 }
 
 // Load everything on login
 async function loadPersistedData(){
-  // Load chat history
   const chat=await dbGet('get-chat');
   if(chat?.messages?.length){
     chatHistory=chat.messages;
@@ -881,9 +934,7 @@ async function loadPersistedData(){
     list.innerHTML='';
     chatHistory.forEach(m=>addMsg(m.role==='user'?'user':'ai',m.content));
   }
-  // Load scenarios
   await loadScenarios();
-  // Load notes
   await loadNotes();
 }
 
@@ -895,7 +946,6 @@ function scheduleChatSave(){
 }
 
 // ── SCENARIOS ─────────────────────────────────────────
-let currentSliders={s1:0,s2:0,s3:50,s4:0,s5:0};
 function captureSliders(){
   return {
     s1:+document.getElementById('s1').value,
@@ -1032,7 +1082,6 @@ function computeVoterStats(rows, cols) {
   for (const col of cols) {
     const vals = rows.map(r => (r[col] == null ? '' : String(r[col])).trim()).filter(v => v !== '');
     const unique = new Set(vals);
-    // Treat as categorical if low cardinality or <5% of rows are unique values
     if (unique.size <= 60 || unique.size / n < 0.05) {
       const counts = {};
       vals.forEach(v => { counts[v] = (counts[v] || 0) + 1; });
@@ -1163,10 +1212,10 @@ function renderVoterQuickBtns() {
   const detected = detectVoterFields(voterFileData.cols);
   const btns = [
     'How many voters are registered by party?',
-    ...(detected.age   ? ['What is the age distribution of voters?']          : []),
-    ...(detected.gender? ['What is the gender breakdown by party?']            : []),
-    ...(detected.district?['Which district has the most registered voters?']   : []),
-    ...(detected.voted?.length ? [`Who voted in ${detected.voted[0]}?`]        : []),
+    ...(detected.age    ? ['What is the age distribution of voters?']           : []),
+    ...(detected.gender ? ['What is the gender breakdown by party?']             : []),
+    ...(detected.district?['Which district has the most registered voters?']     : []),
+    ...(detected.voted?.length ? [`Who voted in ${detected.voted[0]}?`]          : []),
     'Which voter segments should we prioritize for outreach?',
     'What are the top cities in this file?',
   ].slice(0, 5);
