@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Opsfield — Campaign Operations Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0c10;--surface:#10141c;--surface2:#161b26;--border:#1e2535;--accent:#3b82f6;--accent2:#10b981;--accent3:#f59e0b;--danger:#ef4444;--text:#e2e8f0;--muted:#64748b;--dim:#334155;--dem:#3b82f6;--rep:#ef4444;--swing:#f59e0b}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px}
+.mono{font-family:'Space Mono',monospace}
+
+/* AUTH */
+#authOverlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999}
+.auth-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px 28px;width:340px;text-align:center}
+.auth-logo{font-family:'Space Mono',monospace;font-size:15px;color:var(--accent);letter-spacing:3px;margin-bottom:4px}
+.auth-sub{font-size:12px;color:var(--muted);margin-bottom:24px}
+.auth-input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;margin-bottom:10px;transition:border .15s}
+.auth-input:focus{border-color:var(--accent)}
+.auth-btn{width:100%;background:var(--accent);color:#fff;border:none;padding:10px;border-radius:6px;font-size:13px;font-family:'Space Mono',monospace;cursor:pointer;letter-spacing:1px;transition:opacity .15s;margin-bottom:10px}
+.auth-btn:hover{opacity:.85}
+.auth-err{font-size:11px;color:var(--danger);margin-top:6px;display:none}
+.demo-accounts{margin-top:14px;text-align:left;border-top:1px solid var(--border);padding-top:14px}
+.demo-acct{font-size:11px;color:var(--muted);padding:4px 0;cursor:pointer;transition:color .1s}
+.demo-acct:hover{color:var(--accent)}
+.demo-acct span{color:var(--text);font-family:'Space Mono',monospace}
+
+/* LAYOUT */
+.shell{display:grid;grid-template-rows:44px 1fr;height:100vh}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:44px}
+.logo{font-family:'Space Mono',monospace;font-size:13px;color:var(--accent);letter-spacing:2px}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent2);box-shadow:0 0 6px var(--accent2);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.top-meta{display:flex;align-items:center;gap:14px;font-size:11px;color:var(--muted)}
+.user-chip{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);padding:4px 10px;border-radius:20px;font-size:12px;cursor:pointer}
+.user-chip:hover{border-color:var(--accent)}
+.user-avatar{width:20px;height:20px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff}
+.main{display:grid;grid-template-columns:200px 1fr 290px;overflow:hidden;height:calc(100vh - 44px)}
+
+/* SIDEBAR */
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:10px 0;overflow-y:auto;display:flex;flex-direction:column}
+.nav-section{padding:6px 12px 3px;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;font-family:'Space Mono',monospace}
+.nav-item{padding:7px 12px;cursor:pointer;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px;transition:all .15s;border-left:2px solid transparent}
+.nav-item:hover{color:var(--text);background:var(--surface2)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(59,130,246,.06)}
+.upload-zone{margin:10px;border:1px dashed var(--border);border-radius:8px;padding:12px 8px;text-align:center;cursor:pointer;transition:all .2s;color:var(--muted);font-size:11px}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);color:var(--accent);background:rgba(59,130,246,.04)}
+.saved-note{margin:0 10px 6px;font-size:10px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:6px;padding:5px 8px;color:var(--accent2);display:none}
+
+/* CONTENT */
+.content{overflow-y:auto;background:var(--bg);padding:14px}
+.panel{display:none;animation:fadeIn .2s ease}
+.panel.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+.panel-title{font-size:15px;font-weight:600;margin-bottom:3px}
+.panel-sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.metric-val{font-family:'Space Mono',monospace;font-size:20px;font-weight:700;margin-bottom:2px}
+.metric-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.metric-chg{font-size:10px;margin-top:3px}
+.up{color:var(--accent2)}.dn{color:var(--danger)}.neu{color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px}
+.card-title{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-family:'Space Mono',monospace;margin-bottom:10px}
+.chart-wrap{position:relative;width:100%}
+.race-row{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.race-name{width:110px;font-size:12px;color:var(--muted);flex-shrink:0}
+.race-bar{flex:1;height:7px;background:var(--border);border-radius:4px;overflow:hidden;display:flex}
+.bar-d{height:100%;background:var(--dem)}
+.bar-r{height:100%;background:var(--rep)}
+.race-pct{font-size:11px;font-family:'Space Mono',monospace;width:55px;text-align:right;flex-shrink:0}
+.swing-pill{font-size:9px;padding:1px 6px;border-radius:20px;background:rgba(245,158,11,.15);color:var(--swing);border:1px solid rgba(245,158,11,.3);flex-shrink:0}
+
+/* MAP */
+#mapSvg{width:100%;height:280px}
+.state-path{stroke:#0a0c10;stroke-width:0.5;transition:opacity .15s;cursor:pointer}
+.state-path:hover{opacity:.75;stroke-width:1.5;stroke:#fff}
+.map-legend{display:flex;gap:10px;align-items:center;margin-top:8px;font-size:11px;color:var(--muted);flex-wrap:wrap}
+.leg-item{display:flex;align-items:center;gap:4px}
+.leg-sq{width:10px;height:10px;border-radius:2px}
+.tooltip{position:fixed;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11px;pointer-events:none;z-index:100;display:none;max-width:180px;line-height:1.5}
+.tooltip strong{color:var(--text);display:block;margin-bottom:3px;font-size:12px}
+
+/* WHAT-IF */
+.slider-row{margin-bottom:12px}
+.slider-label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px}
+.slider-label span:last-child{color:var(--text);font-family:'Space Mono',monospace}
+input[type=range]{width:100%;accent-color:var(--accent);height:4px;cursor:pointer}
+.sim-result{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:12px;margin-top:10px;text-align:center}
+.sim-result .big{font-size:26px;font-weight:700;font-family:'Space Mono',monospace;color:var(--accent)}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--muted);font-weight:500;padding:5px 7px;border-bottom:1px solid var(--border);font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.5px}
+td{padding:6px 7px;border-bottom:1px solid rgba(30,37,53,.7);color:var(--text)}
+tr:hover td{background:var(--surface2)}
+.badge{font-size:9px;padding:2px 6px;border-radius:20px;font-weight:500}
+.badge-d{background:rgba(59,130,246,.15);color:var(--dem)}
+.badge-r{background:rgba(239,68,68,.15);color:var(--rep)}
+.badge-sw{background:rgba(245,158,11,.15);color:var(--swing)}
+
+/* CSV */
+.csv-wrap{overflow-x:auto;max-height:200px;overflow-y:auto}
+.csv-table{border-collapse:collapse;font-size:11px;width:100%}
+.csv-table th{background:var(--surface2);padding:5px 8px;border:1px solid var(--border);color:var(--muted);font-family:'Space Mono',monospace;font-size:10px;white-space:nowrap}
+.csv-table td{padding:4px 8px;border:1px solid var(--border);color:var(--text);white-space:nowrap}
+.csv-table tr:nth-child(even) td{background:rgba(22,27,38,.5)}
+
+/* AI PANEL */
+.ai-panel{background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.ai-header{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ai-badge{background:rgba(59,130,246,.15);color:var(--accent);font-size:10px;padding:2px 7px;border-radius:20px;font-family:'Space Mono',monospace;letter-spacing:1px}
+.live-badge{background:rgba(16,185,129,.15);color:var(--accent2);font-size:10px;padding:2px 7px;border-radius:20px;font-family:'Space Mono',monospace}
+.messages{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+.msg{padding:9px 11px;border-radius:8px;font-size:12px;line-height:1.55}
+.msg.user{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.2);color:var(--text);align-self:flex-end;max-width:90%}
+.msg.ai{background:var(--surface2);border:1px solid var(--border);color:var(--text);align-self:flex-start;width:100%}
+.msg.ai .ai-label{font-size:9px;color:var(--accent);font-family:'Space Mono',monospace;margin-bottom:4px;letter-spacing:1px}
+.typing span{width:5px;height:5px;border-radius:50%;background:var(--muted);display:inline-block;animation:bounce .8s infinite;margin:0 1px}
+.typing span:nth-child(2){animation-delay:.15s}
+.typing span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+.quick-btns{padding:6px 10px;display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--border);flex-shrink:0}
+.qbtn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:10px;padding:3px 8px;border-radius:20px;cursor:pointer;transition:all .15s}
+.qbtn:hover{border-color:var(--accent);color:var(--accent)}
+.ai-input-row{padding:8px 10px;border-top:1px solid var(--border);display:flex;gap:6px;flex-shrink:0}
+.ai-input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 9px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none;transition:border .15s}
+.ai-input:focus{border-color:var(--accent)}
+.ai-send{background:var(--accent);color:#fff;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Space Mono',monospace;transition:opacity .15s;white-space:nowrap}
+.ai-send:hover{opacity:.85}
+.ai-send:disabled{opacity:.4;cursor:default}
+.data-src{font-size:10px;color:var(--muted);padding:4px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+.data-src span{color:var(--accent2)}
+.turnout-bar{height:14px;background:var(--border);border-radius:4px;overflow:hidden;margin:3px 0}
+.tb-fill{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:7px;font-size:9px;font-family:'Space Mono',monospace;color:rgba(255,255,255,.8);transition:width .7s ease}
+
+/* API KEY SETUP */
+.key-notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:12px;margin-bottom:10px;font-size:12px;color:var(--muted);line-height:1.6}
+.key-notice strong{color:var(--accent3)}
+.key-row{display:flex;gap:6px;margin-top:8px}
+.key-input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 9px;border-radius:6px;font-size:12px;font-family:'Space Mono',monospace;outline:none}
+.key-input:focus{border-color:var(--accent3)}
+.key-btn{background:var(--accent3);color:#000;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Space Mono',monospace;font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="tooltip" id="tooltip"></div>
+
+<!-- AUTH -->
+<div id="authOverlay">
+  <div class="auth-box">
+    <div class="auth-logo">⬡ OPSFIELD</div>
+    <div class="auth-sub">Campaign Operations Intelligence</div>
+    <input class="auth-input" id="authEmail" placeholder="Email" type="email">
+    <input class="auth-input" id="authPass" placeholder="Password" type="password">
+    <button class="auth-btn" onclick="doLogin()">SIGN IN →</button>
+    <div class="auth-err" id="authErr">Invalid credentials</div>
+    <div class="demo-accounts">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">Demo accounts</div>
+      <div class="demo-acct" onclick="fillDemo('director@campaign.com','ops2026')"><span>director@campaign.com</span> / ops2026</div>
+      <div class="demo-acct" style="margin-top:4px" onclick="fillDemo('analyst@campaign.com','data2026')"><span>analyst@campaign.com</span> / data2026</div>
+      <div class="demo-acct" style="margin-top:4px" onclick="fillDemo('press@campaign.com','media2026')"><span>press@campaign.com</span> / media2026</div>
+    </div>
+  </div>
+</div>
+
+<div class="shell" id="appShell" style="display:none">
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div class="logo">⬡ OPSFIELD</div>
+    <div style="width:1px;height:16px;background:var(--border)"></div>
+    <span style="font-size:11px;color:var(--muted)">Campaign Operations Intelligence</span>
+  </div>
+  <div class="top-meta">
+    <div class="status-dot"></div>
+    <span id="dataFreshness">Live</span>
+    <span style="color:var(--border)">|</span>
+    <span id="clockEl"></span>
+    <span style="color:var(--border)">|</span>
+    <div class="user-chip" onclick="doLogout()">
+      <div class="user-avatar" id="userAvatar">?</div>
+      <span id="userLabel">—</span>
+      <span style="color:var(--muted);font-size:10px">↩</span>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+<!-- sidebar -->
+<div class="sidebar">
+  <div class="nav-section">Views</div>
+  <div class="nav-item active" onclick="nav(this,'overview')">◈ Dashboard</div>
+  <div class="nav-item" onclick="nav(this,'map')">⊙ US Map</div>
+  <div class="nav-item" onclick="nav(this,'swing')">⟳ Swing analysis</div>
+  <div class="nav-item" onclick="nav(this,'turnout')">▲ Turnout model</div>
+  <div class="nav-item" onclick="nav(this,'whatif')">◇ What-if sim</div>
+  <div class="nav-item" onclick="nav(this,'districts')">⊞ Districts</div>
+  <div class="nav-item" onclick="nav(this,'scenarios')">⊕ Saved scenarios</div>
+  <div class="nav-item" onclick="nav(this,'notes')">✎ Notes</div>
+  <div class="nav-section" style="margin-top:6px">Data</div>
+  <div class="upload-zone" id="uploadZone">
+    <div style="font-size:16px;margin-bottom:3px">⬆</div>
+    <div>Upload CSV / JSON</div>
+    <div style="font-size:9px;margin-top:2px;opacity:.6">voter file · results · demographics</div>
+    <input type="file" accept=".csv,.json" style="display:none" id="fileIn" onchange="handleUpload(event)">
+  </div>
+  <div class="saved-note" id="savedNote">✓ File loaded</div>
+  <div class="nav-section" style="margin-top:6px">Key races</div>
+  <div id="stateNav"></div>
+  <div style="flex:1"></div>
+  <div style="padding:10px 12px;font-size:10px;color:var(--dim)">Opsfield v3.0 · Supabase</div>
+</div>
+
+<!-- content -->
+<div class="content">
+
+<!-- OVERVIEW -->
+<div class="panel active" id="panel-overview">
+  <div class="panel-title">Campaign intelligence</div>
+  <div class="panel-sub" id="overviewSub">2026 Senate cycle · competitive races</div>
+  <div class="metrics">
+    <div class="metric"><div class="metric-val" id="m1" style="color:var(--dem)">47</div><div class="metric-lbl">Dem seats</div><div class="metric-chg neu">→ hold</div></div>
+    <div class="metric"><div class="metric-val" id="m2" style="color:var(--rep)">53</div><div class="metric-lbl">Rep seats</div><div class="metric-chg dn">↓ -2 projected</div></div>
+    <div class="metric"><div class="metric-val" id="m3" style="color:var(--swing)">—</div><div class="metric-lbl">Tossups</div><div class="metric-chg neu">→ watch list</div></div>
+    <div class="metric"><div class="metric-val" id="m4" style="color:var(--accent2)">—</div><div class="metric-lbl">Avg turnout</div><div class="metric-chg up">↑ +3.1pp</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Key race tracker</div>
+    <div id="raceTracker"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Senate control probability — 2026 cycle</div>
+    <div class="chart-wrap" style="height:170px"><canvas id="overviewChart" role="img" aria-label="Senate control trend">Loading...</canvas></div>
+  </div>
+</div>
+
+<!-- MAP -->
+<div class="panel" id="panel-map">
+  <div class="panel-title">Competitive race map</div>
+  <div class="panel-sub">Hover for details · click any state for a breakdown</div>
+  <div class="card">
+    <div class="card-title">US Senate — 2026 cycle</div>
+    <svg id="mapSvg" viewBox="0 0 960 600" role="img" aria-label="US Senate race map"></svg>
+    <div class="map-legend">
+      <div class="leg-item"><div class="leg-sq" style="background:#1d4ed8"></div>Safe D</div>
+      <div class="leg-item"><div class="leg-sq" style="background:#3b82f6"></div>Likely D</div>
+      <div class="leg-item"><div class="leg-sq" style="background:#93c5fd"></div>Lean D</div>
+      <div class="leg-item"><div class="leg-sq" style="background:#f59e0b"></div>Tossup</div>
+      <div class="leg-item"><div class="leg-sq" style="background:#fca5a5"></div>Lean R</div>
+      <div class="leg-item"><div class="leg-sq" style="background:#ef4444"></div>Likely R</div>
+      <div class="leg-item"><div class="leg-sq" style="background:#991b1b"></div>Safe R</div>
+      <div class="leg-item"><div class="leg-sq" style="background:var(--dim)"></div>Not up</div>
+    </div>
+  </div>
+  <div class="card" id="stateDetail" style="display:none">
+    <div class="card-title" id="stateDetailTitle">State detail</div>
+    <div id="stateDetailBody"></div>
+  </div>
+</div>
+
+<!-- SWING -->
+<div class="panel" id="panel-swing">
+  <div class="panel-title">Swing analysis</div>
+  <div class="panel-sub">Partisan shift from 2022 baseline · positive = D gain</div>
+  <div class="card">
+    <div class="card-title">State-level swing (pp)</div>
+    <div id="swingBars"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Swing vs turnout projection</div>
+    <div class="chart-wrap" style="height:200px"><canvas id="swingChart" role="img" aria-label="Swing vs turnout scatter">Loading...</canvas></div>
+  </div>
+</div>
+
+<!-- TURNOUT -->
+<div class="panel" id="panel-turnout">
+  <div class="panel-title">Turnout model</div>
+  <div class="panel-sub">Predicted participation by demographic segment</div>
+  <div class="card">
+    <div class="card-title">Turnout by demographic</div>
+    <div id="turnoutBars"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">State projections vs 2022 actual</div>
+    <div class="chart-wrap" style="height:200px"><canvas id="turnoutChart" role="img" aria-label="State turnout comparison">Loading...</canvas></div>
+  </div>
+</div>
+
+<!-- WHAT-IF -->
+<div class="panel" id="panel-whatif">
+  <div class="panel-title">What-if simulator</div>
+  <div class="panel-sub">Adjust assumptions · see projected Senate outcome in real time</div>
+  <div class="card">
+    <div class="card-title">Scenario controls</div>
+    <div class="slider-row"><div class="slider-label"><span>Youth turnout boost</span><span id="v1">+0%</span></div><input type="range" min="-10" max="20" value="0" id="s1" oninput="simUpdate()"></div>
+    <div class="slider-row"><div class="slider-label"><span>Urban base enthusiasm</span><span id="v2">Neutral</span></div><input type="range" min="-3" max="3" value="0" step="1" id="s2" oninput="simUpdate()"></div>
+    <div class="slider-row"><div class="slider-label"><span>Late-decider lean (D)</span><span id="v3">50%</span></div><input type="range" min="35" max="65" value="50" id="s3" oninput="simUpdate()"></div>
+    <div class="slider-row"><div class="slider-label"><span>Suburban shift (pp)</span><span id="v4">0</span></div><input type="range" min="-5" max="5" value="0" id="s4" oninput="simUpdate()"></div>
+    <div class="slider-row"><div class="slider-label"><span>Economic approval impact</span><span id="v5">Neutral</span></div><input type="range" min="-3" max="3" value="0" step="1" id="s5" oninput="simUpdate()"></div>
+    <div class="sim-result">
+      <div class="big" id="simSeats">47</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">Projected Dem seats</div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)" id="simNote">Adjust sliders to model scenarios</div>
+      <div id="simBars" style="margin-top:12px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- DISTRICTS -->
+<div class="panel" id="panel-districts">
+  <div class="panel-title">District data</div>
+  <div class="panel-sub">All competitive Senate races · <span id="uploadedDataNote">baseline data</span></div>
+  <div class="card" id="csvPreviewCard" style="display:none">
+    <div class="card-title">Uploaded data preview</div>
+    <div class="csv-wrap"><table class="csv-table" id="csvTable"></table></div>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table><thead><tr><th>State</th><th>D %</th><th>R %</th><th>Margin</th><th>Turnout</th><th>Swing</th><th>Status</th></tr></thead>
+    <tbody id="districtBody"></tbody></table>
+  </div>
+</div>
+
+<!-- SAVED SCENARIOS -->
+<div class="panel" id="panel-scenarios">
+  <div class="panel-title">Saved scenarios</div>
+  <div class="panel-sub">What-if simulations saved across sessions</div>
+  <div class="card">
+    <div class="card-title">Save current what-if scenario</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="scenarioName" placeholder="Name this scenario (e.g. High youth turnout)" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
+      <button onclick="saveScenario()" style="background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-family:'Space Mono',monospace;cursor:pointer;white-space:nowrap">SAVE ↗</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Saves your current What-if sim slider settings</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Saved scenarios</div>
+    <div id="scenariosList"><div style="color:var(--muted);font-size:12px;padding:8px 0">No saved scenarios yet. Set up a What-if simulation and save it here.</div></div>
+  </div>
+</div>
+
+<!-- NOTES -->
+<div class="panel" id="panel-notes">
+  <div class="panel-title">Notes</div>
+  <div class="panel-sub">Analysis notes saved to your account · persist across sessions and devices</div>
+  <div class="card">
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input id="noteTitle" placeholder="Note title..." style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
+      <button onclick="saveNote()" style="background:var(--accent2);color:#000;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-family:'Space Mono',monospace;cursor:pointer;font-weight:700;white-space:nowrap">SAVE</button>
+      <button onclick="newNote()" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted);padding:7px 12px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap">+ New</button>
+    </div>
+    <textarea id="noteContent" placeholder="Write your analysis, talking points, or observations here..." style="width:100%;min-height:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;resize:vertical;line-height:1.6"></textarea>
+    <div style="font-size:10px;color:var(--muted);margin-top:5px" id="noteSaveStatus">Notes auto-save when you click Save</div>
+  </div>
+  <div class="card">
+    <div class="card-title">All notes</div>
+    <div id="notesList"><div style="color:var(--muted);font-size:12px;padding:8px 0">No notes yet.</div></div>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<!-- AI PANEL -->
+<div class="ai-panel">
+  <div class="ai-header">
+    <span style="font-size:13px;font-weight:600">Ask the data</span>
+    <div style="display:flex;gap:5px"><div class="ai-badge">CLAUDE</div><div class="live-badge">AI</div></div>
+  </div>
+  <div class="data-src" id="dataSourceLabel">2026 baseline data loaded</div>
+  <div id="apiKeySetup" style="padding:10px">
+    <div class="key-notice">
+      <strong>API key required</strong> — To enable AI chat, paste your Anthropic API key below. It stays in your browser only and is never sent anywhere except Anthropic's API.<br>
+      Get one free at <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a>
+    </div>
+    <div class="key-row">
+      <input class="key-input" id="apiKeyInput" type="password" placeholder="sk-ant-...">
+      <button class="key-btn" onclick="saveKey()">SAVE</button>
+    </div>
+  </div>
+  <div class="quick-btns">
+    <div class="qbtn" onclick="quickAsk('Which 3 states should we prioritize for ground game?')">Resource targeting</div>
+    <div class="qbtn" onclick="quickAsk('Which states are most flippable from R to D?')">Flip targets</div>
+    <div class="qbtn" onclick="quickAsk('Where is youth turnout most impactful?')">Youth turnout</div>
+    <div class="qbtn" onclick="quickAsk('What are the top swing risks?')">Swing risks</div>
+    <div class="qbtn" onclick="quickAsk('Summarize the path to a Democratic Senate majority')">Majority path</div>
+  </div>
+  <div class="messages" id="msgList">
+    <div class="msg ai"><div class="ai-label">OPSFIELD AI</div>Add your Anthropic API key above to enable AI analysis. The dashboard visualizations work without it.</div>
+  </div>
+  <div class="ai-input-row">
+    <input class="ai-input" id="aiInput" placeholder="Ask about the data..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}">
+    <button class="ai-send" id="sendBtn" onclick="sendMsg()">ASK ↗</button>
+  </div>
+</div>
+
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+// ── CONSTANTS ─────────────────────────────────────────
+const USERS={
+  'director@campaign.com':{pass:'ops2026',role:'Campaign Director',initials:'CD'},
+  'analyst@campaign.com':{pass:'data2026',role:'Data Analyst',initials:'DA'},
+  'press@campaign.com':{pass:'media2026',role:'Press Secretary',initials:'PS'}
+};
+const BASE_RACES=[
+  {state:'Arizona',abbr:'AZ',fips:'04',d:48,r:52,turn:61,swing:-1.2,status:'tossup'},
+  {state:'Nevada',abbr:'NV',fips:'32',d:51,r:49,turn:58,swing:+0.8,status:'lean-d'},
+  {state:'Michigan',abbr:'MI',fips:'26',d:54,r:46,turn:67,swing:+2.1,status:'likely-d'},
+  {state:'Wisconsin',abbr:'WI',fips:'55',d:47,r:53,turn:64,swing:-0.6,status:'lean-r'},
+  {state:'Montana',abbr:'MT',fips:'30',d:39,r:61,turn:55,swing:-3.1,status:'safe-r'},
+  {state:'Ohio',abbr:'OH',fips:'39',d:44,r:56,turn:59,swing:-1.8,status:'lean-r'},
+  {state:'Pennsylvania',abbr:'PA',fips:'42',d:50,r:50,turn:66,swing:+0.2,status:'tossup'},
+  {state:'Georgia',abbr:'GA',fips:'13',d:48,r:52,turn:63,swing:-0.4,status:'lean-r'},
+  {state:'New Hampshire',abbr:'NH',fips:'33',d:53,r:47,turn:69,swing:+1.1,status:'likely-d'},
+];
+const STATE_CLASS={
+  '01':'safe-r','02':'safe-r','04':'tossup','05':'safe-r','06':'safe-d',
+  '08':'lean-d','09':'safe-d','10':'safe-d','12':'safe-r','13':'lean-r',
+  '15':'safe-d','16':'safe-r','17':'safe-d','18':'safe-r','19':'lean-r',
+  '20':'safe-r','21':'safe-r','22':'safe-r','23':'safe-d','24':'safe-d',
+  '25':'safe-d','26':'likely-d','27':'lean-d','28':'safe-r','29':'safe-r',
+  '30':'safe-r','31':'safe-r','32':'lean-d','33':'likely-d','34':'safe-d',
+  '35':'lean-d','36':'safe-d','37':'lean-r','38':'safe-r','39':'lean-r',
+  '40':'safe-r','41':'safe-d','42':'tossup','44':'safe-d','45':'lean-r',
+  '46':'safe-r','47':'safe-r','48':'safe-r','49':'lean-r','50':'safe-d',
+  '51':'lean-d','53':'safe-d','54':'safe-r','55':'lean-r','56':'safe-r'
+};
+const CLASS_COLOR={'safe-d':'#1d4ed8','likely-d':'#3b82f6','lean-d':'#93c5fd','tossup':'#f59e0b','lean-r':'#fca5a5','likely-r':'#ef4444','safe-r':'#991b1b'};
+const STATUS_META={'tossup':['badge-sw','TOSSUP'],'lean-d':['badge-d','LEAN D'],'lean-r':['badge-r','LEAN R'],'likely-d':['badge-d','LIKELY D'],'likely-r':['badge-r','LIKELY R'],'safe-d':['badge-d','SAFE D'],'safe-r':['badge-r','SAFE R']};
+const ENTH=['Very low','Low','Slightly low','Neutral','Slightly high','High','Very high'];
+const ECON=['Very negative','Negative','Slightly neg','Neutral','Slightly pos','Positive','Very positive'];
+
+let currentUser=null,uploadedCSVData=null,chatHistory=[],charts={},mapLoaded=false,races=[];
+let apiKey=localStorage.getItem('opsfield_apikey')||'';
+
+// ── AUTH ──────────────────────────────────────────────
+function fillDemo(e,p){document.getElementById('authEmail').value=e;document.getElementById('authPass').value=p;}
+function doLogin(){
+  const e=document.getElementById('authEmail').value.trim().toLowerCase();
+  const p=document.getElementById('authPass').value;
+  const u=USERS[e];
+  if(u&&u.pass===p){
+    currentUser={email:e,...u};
+    document.getElementById('authOverlay').style.display='none';
+    document.getElementById('appShell').style.display='grid';
+    document.getElementById('userLabel').textContent=u.role;
+    document.getElementById('userAvatar').textContent=u.initials;
+    if(apiKey)document.getElementById('apiKeySetup').style.display='none';
+    init();
+    loadPersistedData();
+  } else {
+    const err=document.getElementById('authErr');
+    err.style.display='block';
+    setTimeout(()=>err.style.display='none',2500);
+  }
+}
+function doLogout(){
+  document.getElementById('appShell').style.display='none';
+  document.getElementById('authOverlay').style.display='flex';
+  currentUser=null;chatHistory=[];
+  document.getElementById('authPass').value='';
+}
+document.getElementById('authEmail').onkeydown=e=>{if(e.key==='Enter')document.getElementById('authPass').focus()};
+document.getElementById('authPass').onkeydown=e=>{if(e.key==='Enter')doLogin()};
+
+// ── API KEY ───────────────────────────────────────────
+function saveKey(){
+  const k=document.getElementById('apiKeyInput').value.trim();
+  if(!k){return;}
+  apiKey=k;
+  localStorage.setItem('opsfield_apikey',k);
+  document.getElementById('apiKeySetup').style.display='none';
+  addMsg('ai','API key saved. I now have full access to analyze the election data. Ask me anything!');
+}
+
+// ── CLOCK ─────────────────────────────────────────────
+setInterval(()=>{document.getElementById('clockEl').textContent=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000);
+
+// ── LIVE DATA FEEDS ───────────────────────────────────
+async function simulateLiveRefresh(){
+  await Promise.allSettled([fetchPolls(), fetchMarkets()]);
+}
+
+async function fetchPolls(){
+  try {
+    const res = await fetch('/api/polls');
+    if (!res.ok) throw new Error('polls API error');
+    const data = await res.json();
+    if (data.races && data.races.length > 0) {
+      races = BASE_RACES.map(base => {
+        const live = data.races.find(r => r.abbr === base.abbr);
+        return live ? { ...base, ...live } : base;
+      });
+    }
+    const now = new Date();
+    document.getElementById('dataFreshness').textContent =
+      `${data.live ? '🟢' : '🟡'} ${now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}`;
+    document.getElementById('dataSourceLabel').textContent =
+      `${data.live ? 'Live polls · 538 data' : 'Baseline (live unavailable)'} · ${now.toLocaleTimeString()}`;
+    document.getElementById('m3').textContent = races.filter(r=>r.status==='tossup').length;
+    document.getElementById('m4').textContent = Math.round(races.reduce((s,r)=>s+r.turn,0)/races.length)+'%';
+    renderRaceTracker();
+    renderDistricts();
+  } catch(err) {
+    console.warn('Poll fetch failed:', err.message);
+    races = BASE_RACES.map(r => ({...r}));
+    document.getElementById('dataFreshness').textContent = '🔴 Offline — baseline data';
+    renderRaceTracker();
+    renderDistricts();
+  }
+}
+
+async function fetchMarkets(){
+  try {
+    const res = await fetch('/api/markets');
+    if (!res.ok) throw new Error('markets API error');
+    const data = await res.json();
+    if (!data.markets || data.markets.length === 0) return;
+    const abbrevKeywords = {
+      'AZ':['arizona'],'NV':['nevada'],'MI':['michigan'],'WI':['wisconsin'],
+      'MT':['montana'],'OH':['ohio'],'PA':['pennsylvania'],'GA':['georgia'],
+      'NH':['new hampshire','hampshire']
+    };
+    races = races.map(race => {
+      const kws = abbrevKeywords[race.abbr] || [];
+      const match = data.markets.find(m => {
+        const t = m.title.toLowerCase();
+        return kws.some(kw => t.includes(kw));
+      });
+      if (!match || match.demProb === null) return race;
+      // Blend: 60% polls, 40% prediction market
+      const blendedD = +(race.d * 0.6 + match.demProb * 0.4).toFixed(1);
+      return { ...race, d: blendedD, r: +(100-blendedD).toFixed(1), marketProb: match.demProb, marketUrl: match.url };
+    });
+    renderRaceTracker();
+    renderDistricts();
+  } catch(err) {
+    console.warn('Markets fetch failed:', err.message);
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────
+function init(){
+  races=BASE_RACES.map(r=>({...r}));
+  renderStateNav();renderOverview();renderSwing();renderTurnout();renderDistricts();simUpdate();setupUpload();
+  simulateLiveRefresh();
+  setInterval(simulateLiveRefresh,45000);
+}
+
+// ── OVERVIEW ──────────────────────────────────────────
+function renderOverview(){
+  document.getElementById('overviewSub').textContent=`2026 Senate cycle · ${new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
+  document.getElementById('m3').textContent=races.filter(r=>r.status==='tossup').length;
+  document.getElementById('m4').textContent=Math.round(races.reduce((s,r)=>s+r.turn,0)/races.length)+'%';
+  renderRaceTracker();
+  if(charts.overview)charts.overview.destroy();
+  charts.overview=new Chart(document.getElementById('overviewChart'),{
+    type:'line',
+    data:{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov'],
+      datasets:[
+        {label:'Dem',data:[48,47,48,47,46,47,47,48,47,47,47],borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.08)',tension:.4,fill:true,pointRadius:3},
+        {label:'Rep',data:[52,53,52,53,54,53,53,52,53,53,53],borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.05)',tension:.4,fill:true,pointRadius:3}
+      ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(30,37,53,.8)'},ticks:{color:'#64748b',font:{size:9}}},y:{grid:{color:'rgba(30,37,53,.8)'},ticks:{color:'#64748b',font:{size:9}},min:44,max:56}}}
+  });
+}
+function renderRaceTracker(){
+  document.getElementById('raceTracker').innerHTML=races.map(r=>{
+    const m=(r.d-r.r).toFixed(1);const dLeads=r.d>=r.r;
+    return `<div class="race-row">
+      <span class="race-name">${r.state}</span>
+      <div class="race-bar"><div class="bar-d" style="width:${r.d}%"></div><div class="bar-r" style="width:${r.r}%"></div></div>
+      <span class="race-pct mono" style="color:${dLeads?'var(--dem)':'var(--rep)'}">${dLeads?'D':'R'}+${Math.abs(m)}</span>
+      ${Math.abs(+m)<=3?'<span class="swing-pill">SWING</span>':''}
+    </div>`;
+  }).join('');
+}
+
+// ── MAP ───────────────────────────────────────────────
+function renderMap(){
+  if(mapLoaded)return;mapLoaded=true;
+  const svg=d3.select('#mapSvg');
+  const proj=d3.geoAlbersUsa().scale(1100).translate([480,300]);
+  const path=d3.geoPath().projection(proj);
+  d3.json('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(us=>{
+    svg.selectAll('path').data(topojson.feature(us,us.objects.states).features).join('path')
+      .attr('class','state-path')
+      .attr('d',path)
+      .attr('fill',d=>{const f=String(d.id).padStart(2,'0');return CLASS_COLOR[STATE_CLASS[f]]||'#334155';})
+      .on('mousemove',(event,d)=>{
+        const f=String(d.id).padStart(2,'0');
+        const race=races.find(r=>r.fips===f);
+        const cls=STATE_CLASS[f]||'not-up';
+        const tt=document.getElementById('tooltip');
+        tt.style.display='block';tt.style.left=(event.clientX+14)+'px';tt.style.top=(event.clientY-10)+'px';
+        tt.innerHTML=race
+          ?`<strong>${d.properties.name}</strong>D: ${race.d}% · R: ${race.r}%<br>Turnout: ${race.turn}% · Swing: ${race.swing>0?'+':''}${race.swing}pp<br>${cls.replace('-',' ').toUpperCase()}`
+          :`<strong>${d.properties.name}</strong>${cls.replace('-',' ').toUpperCase()}`;
+      })
+      .on('mouseleave',()=>document.getElementById('tooltip').style.display='none')
+      .on('click',(event,d)=>{
+        const f=String(d.id).padStart(2,'0');
+        const race=races.find(r=>r.fips===f);
+        const el=document.getElementById('stateDetail');
+        document.getElementById('stateDetailTitle').textContent=d.properties.name+' · detail';
+        if(race){
+          const m=(race.d-race.r).toFixed(1);
+          const [cls,lbl]=STATUS_META[race.status]||['badge-sw','—'];
+          document.getElementById('stateDetailBody').innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+            <div style="text-align:center"><div style="color:var(--dem);font-family:'Space Mono',monospace;font-size:18px;font-weight:700">${race.d}%</div><div style="font-size:10px;color:var(--muted)">Democrat</div></div>
+            <div style="text-align:center"><div style="color:var(--rep);font-family:'Space Mono',monospace;font-size:18px;font-weight:700">${race.r}%</div><div style="font-size:10px;color:var(--muted)">Republican</div></div>
+            <div style="text-align:center"><div style="font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${+m>0?'var(--dem)':'var(--rep)'}">${+m>0?'+':''}${m}</div><div style="font-size:10px;color:var(--muted)">Margin</div></div>
+          </div>
+          <div style="display:flex;gap:10px;font-size:12px;color:var(--muted);flex-wrap:wrap">
+            <span>Turnout: <strong style="color:var(--text)">${race.turn}%</strong></span>
+            <span>Swing: <strong style="color:${race.swing>0?'var(--dem)':'var(--rep)'}">${race.swing>0?'+':''}${race.swing}pp</strong></span>
+            <span class="badge ${cls}">${lbl}</span>
+          </div>`;
+        } else {
+          document.getElementById('stateDetailBody').innerHTML=`<p style="color:var(--muted);font-size:12px">No Senate race in ${d.properties.name} this cycle.</p>`;
+        }
+        el.style.display='block';
+        el.scrollIntoView({behavior:'smooth',block:'nearest'});
+      });
+  }).catch(()=>{
+    svg.append('text').attr('x',480).attr('y',300).attr('text-anchor','middle').attr('fill','#64748b').attr('font-size',13).text('Map failed to load — check internet connection');
+  });
+}
+
+// ── SWING ─────────────────────────────────────────────
+function renderSwing(){
+  document.getElementById('swingBars').innerHTML=races.map(r=>`<div class="race-row">
+    <span class="race-name">${r.state}</span>
+    <div style="flex:1;height:7px;background:var(--border);border-radius:4px;position:relative;overflow:hidden">
+      ${r.swing>0
+        ?`<div style="position:absolute;left:50%;width:${Math.min(Math.abs(r.swing)*9,48)}%;height:100%;background:var(--dem);border-radius:0 4px 4px 0"></div>`
+        :`<div style="position:absolute;right:50%;width:${Math.min(Math.abs(r.swing)*9,48)}%;height:100%;background:var(--rep);border-radius:4px 0 0 4px"></div>`}
+      <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:var(--muted);opacity:.4"></div>
+    </div>
+    <span class="race-pct mono" style="color:${r.swing>0?'var(--dem)':'var(--rep)'}">${r.swing>0?'+':''}${r.swing}</span>
+  </div>`).join('');
+  if(charts.swing)charts.swing.destroy();
+  charts.swing=new Chart(document.getElementById('swingChart'),{
+    type:'scatter',
+    data:{datasets:[{label:'States',data:races.map(r=>({x:r.swing,y:r.turn,label:r.abbr})),backgroundColor:races.map(r=>r.swing>0?'rgba(59,130,246,.8)':'rgba(239,68,68,.8)'),pointRadius:7}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.raw.label}: swing ${ctx.raw.x>0?'+':''}${ctx.raw.x}pp, turnout ${ctx.raw.y}%`}}},scales:{x:{title:{display:true,text:'Swing (pp)',color:'#64748b',font:{size:10}},grid:{color:'rgba(30,37,53,.8)'},ticks:{color:'#64748b',font:{size:9}}},y:{title:{display:true,text:'Turnout proj (%)',color:'#64748b',font:{size:10}},grid:{color:'rgba(30,37,53,.8)'},ticks:{color:'#64748b',font:{size:9}}}}}
+  });
+}
+
+// ── TURNOUT ───────────────────────────────────────────
+function renderTurnout(){
+  const demos=[{g:'18–29',p:52,c:'#3b82f6'},{g:'30–44',p:61,c:'#6366f1'},{g:'45–59',p:68,c:'#8b5cf6'},{g:'60–74',p:72,c:'#a78bfa'},{g:'75+',p:74,c:'#c4b5fd'}];
+  document.getElementById('turnoutBars').innerHTML=demos.map(d=>`<div style="margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px"><span>${d.g}</span><span class="mono">${d.p}%</span></div>
+    <div class="turnout-bar"><div class="tb-fill" style="width:${d.p}%;background:${d.c}">${d.p}%</div></div>
+  </div>`).join('');
+  if(charts.turnout)charts.turnout.destroy();
+  charts.turnout=new Chart(document.getElementById('turnoutChart'),{
+    type:'bar',
+    data:{labels:races.map(r=>r.abbr),datasets:[{label:'2026 proj',data:races.map(r=>r.turn),backgroundColor:'rgba(99,102,241,.75)',borderRadius:3},{label:'2022 actual',data:[58,60,64,61,57,57,63,61,66],backgroundColor:'rgba(100,116,139,.35)',borderRadius:3}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#64748b',font:{size:9}}},y:{grid:{color:'rgba(30,37,53,.8)'},ticks:{callback:v=>v+'%',color:'#64748b',font:{size:9}},min:50,max:78}}}
+  });
+}
+
+// ── DISTRICTS ─────────────────────────────────────────
+function renderDistricts(){
+  document.getElementById('districtBody').innerHTML=races.map(r=>{
+    const m=(r.d-r.r).toFixed(1);
+    const [cls,lbl]=STATUS_META[r.status]||['badge-sw','—'];
+    return `<tr><td style="font-weight:500">${r.state}</td><td class="mono" style="color:var(--dem)">${r.d}%</td><td class="mono" style="color:var(--rep)">${r.r}%</td><td class="mono" style="color:${+m>0?'var(--dem)':'var(--rep)'}">${+m>0?'D':'R'}+${Math.abs(m)}</td><td class="mono">${r.turn}%</td><td class="mono" style="color:${r.swing>0?'var(--dem)':'var(--rep)'}">${r.swing>0?'+':''}${r.swing}</td><td><span class="badge ${cls}">${lbl}</span></td></tr>`;
+  }).join('');
+}
+
+// ── STATE NAV ─────────────────────────────────────────
+function renderStateNav(){
+  document.getElementById('stateNav').innerHTML=BASE_RACES.map(r=>`<div class="nav-item" style="font-size:11px" onclick="nav(null,'map')">
+    <span style="width:5px;height:5px;border-radius:50%;background:${r.d>r.r?'var(--dem)':'var(--rep)'};display:inline-block;flex-shrink:0"></span>${r.state}
+  </div>`).join('');
+}
+
+// ── WHAT-IF ───────────────────────────────────────────
+function simUpdate(){
+  const s1=+document.getElementById('s1').value;
+  const s2=+document.getElementById('s2').value;
+  const s3=+document.getElementById('s3').value;
+  const s4=+document.getElementById('s4').value;
+  const s5=+document.getElementById('s5').value;
+  document.getElementById('v1').textContent=(s1>=0?'+':'')+s1+'%';
+  document.getElementById('v2').textContent=ENTH[s2+3];
+  document.getElementById('v3').textContent=s3+'%';
+  document.getElementById('v4').textContent=(s4>=0?'+':'')+s4;
+  document.getElementById('v5').textContent=ECON[s5+3];
+  const delta=Math.round(s1*.08+s2*.4+(s3-50)*.06+s4*.3+s5*.35);
+  const proj=Math.min(56,Math.max(40,47+delta));
+  document.getElementById('simSeats').textContent=proj;
+  document.getElementById('simSeats').style.color=proj>=50?'var(--accent2)':proj<44?'var(--danger)':'var(--accent)';
+  const diff=proj-47;
+  document.getElementById('simNote').textContent=diff===0?'No change from baseline':diff>0?`+${diff} seat gain${proj>=50?' — potential majority!':''}`:` ${diff} seat loss`;
+  document.getElementById('simBars').innerHTML=`<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:4px">
+    <div style="width:${proj}%;background:var(--dem);transition:width .5s ease"></div>
+    <div style="width:${100-proj}%;background:var(--rep);transition:width .5s ease"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px"><span>D: ${proj}</span><span>R: ${100-proj}</span></div>`;
+}
+
+// ── UPLOAD ────────────────────────────────────────────
+function setupUpload(){
+  const zone=document.getElementById('uploadZone');
+  zone.onclick=()=>document.getElementById('fileIn').click();
+  zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag')};
+  zone.ondragleave=()=>zone.classList.remove('drag');
+  zone.ondrop=e=>{e.preventDefault();zone.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)processFile(f)};
+}
+function handleUpload(e){const f=e.target.files[0];if(f)processFile(f);}
+function processFile(f){
+  const ext=f.name.split('.').pop().toLowerCase();
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    let cols,rows;
+    if(ext==='csv'){
+      const p=Papa.parse(ev.target.result,{header:true,skipEmptyLines:true});
+      cols=p.meta.fields;rows=p.data;
+    } else {
+      try{const d=JSON.parse(ev.target.result);cols=Object.keys(d[0]||{});rows=d;}catch{addMsg('ai','Could not parse that file.');return;}
+    }
+    uploadedCSVData={filename:f.name,cols,rows};
+    document.getElementById('savedNote').style.display='block';
+    document.getElementById('savedNote').textContent=`✓ ${f.name} (${rows.length} rows)`;
+    document.getElementById('uploadedDataNote').textContent=`uploaded: ${f.name}`;
+    document.getElementById('dataSourceLabel').textContent=`Uploaded: ${f.name} · ${rows.length} rows`;
+    const card=document.getElementById('csvPreviewCard');card.style.display='block';
+    const tbl=document.getElementById('csvTable');
+    tbl.innerHTML=`<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.slice(0,8).map(r=>`<tr>${cols.map(c=>`<td>${r[c]||''}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    addMsg('ai',`Loaded <strong>${f.name}</strong> — ${rows.length} rows, columns: ${cols.slice(0,5).join(', ')}${cols.length>5?'…':''}. Ask me anything about this data.`);
+    nav(document.querySelector('[onclick*="districts"]'),'districts');
+  };
+  reader.readAsText(f);
+}
+
+// ── NAV ───────────────────────────────────────────────
+function nav(el,panel){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  if(el)el.classList.add('active');
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+panel).classList.add('active');
+  if(panel==='map')setTimeout(renderMap,50);
+}
+
+// ── AI ────────────────────────────────────────────────
+function buildContext(){
+  const raceLines=races.map(r=>`${r.state}(${r.abbr}): D${r.d.toFixed(1)}% R${r.r.toFixed(1)}%, turnout ${r.turn}%, swing ${r.swing>0?'+':''}${r.swing}pp, ${r.status}`).join('; ');
+  let csvCtx='';
+  if(uploadedCSVData){
+    csvCtx=`\n\nUploaded file: ${uploadedCSVData.filename} (${uploadedCSVData.rows.length} rows). Columns: ${uploadedCSVData.cols.join(', ')}. Sample: ${JSON.stringify(uploadedCSVData.rows.slice(0,15))}`;
+  }
+  return `You are an AI political analyst for Opsfield, a campaign operations intelligence platform. Speaking to: ${currentUser?.role||'campaign staffer'}.
+
+2026 Senate data: ${raceLines}
+
+Context: Dems at 47 seats, need 50+ for majority. Top tossups: Arizona, Pennsylvania. Best D pickup opportunities: Nevada (D+1), New Hampshire (D+6), Michigan (D+8). Biggest R holds: Montana (R+22), Ohio (R+12).${csvCtx}
+
+Be direct, analytical, and concise (under 150 words). Use specific numbers. Think like a senior campaign analyst.`;
+}
+async function sendMsg(){
+  if(!apiKey){addMsg('ai','Please add your Anthropic API key above to enable AI chat.');return;}
+  const input=document.getElementById('aiInput');
+  const btn=document.getElementById('sendBtn');
+  const text=input.value.trim();if(!text)return;
+  addMsg('user',text);chatHistory.push({role:'user',content:text});
+  input.value='';btn.disabled=true;
+  const typingEl=addTyping();
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:buildContext(),messages:chatHistory.slice(-14)})
+    });
+    const data=await res.json();
+    typingEl.remove();
+    if(data.error){addMsg('ai',`API error: ${data.error.message}`);btn.disabled=false;return;}
+    const reply=data.content?.find(c=>c.type==='text')?.text||'No response.';
+    chatHistory.push({role:'assistant',content:reply});
+    addMsg('ai',reply);
+    scheduleChatSave();
+  }catch(e){typingEl.remove();addMsg('ai','Network error. Check your connection.');}
+  btn.disabled=false;input.focus();
+}
+function quickAsk(q){document.getElementById('aiInput').value=q;sendMsg();}
+function addMsg(role,html){
+  const list=document.getElementById('msgList');
+  const el=document.createElement('div');el.className=`msg ${role}`;
+  el.innerHTML=role==='ai'?`<div class="ai-label">OPSFIELD AI</div>${html}`:html;
+  if(role==='user')el.textContent=html;
+  list.appendChild(el);list.scrollTop=list.scrollHeight;return el;
+}
+function addTyping(){
+  const list=document.getElementById('msgList');
+  const el=document.createElement('div');el.className='msg ai';
+  el.innerHTML='<div class="ai-label">OPSFIELD AI</div><div class="typing"><span></span><span></span><span></span></div>';
+  list.appendChild(el);list.scrollTop=list.scrollHeight;return el;
+}
+
+// ── PERSISTENCE (Supabase via /api/db) ───────────────
+function dbHeaders(){
+  return {'Content-Type':'application/json','x-user-email':currentUser?.email||''};
+}
+async function dbGet(action){
+  try{
+    const r=await fetch(`/api/db?action=${action}`,{headers:dbHeaders()});
+    return r.ok?await r.json():null;
+  }catch{return null;}
+}
+async function dbPost(action,body){
+  try{
+    const r=await fetch(`/api/db?action=${action}`,{method:'POST',headers:dbHeaders(),body:JSON.stringify(body)});
+    return r.ok?await r.json():null;
+  }catch{return null;}
+}
+
+// Load everything on login
+async function loadPersistedData(){
+  // Load chat history
+  const chat=await dbGet('get-chat');
+  if(chat?.messages?.length){
+    chatHistory=chat.messages;
+    const list=document.getElementById('msgList');
+    list.innerHTML='';
+    chatHistory.forEach(m=>addMsg(m.role==='user'?'user':'ai',m.content));
+  }
+  // Load scenarios
+  await loadScenarios();
+  // Load notes
+  await loadNotes();
+}
+
+// Auto-save chat after each message (debounced)
+let chatSaveTimer=null;
+function scheduleChatSave(){
+  clearTimeout(chatSaveTimer);
+  chatSaveTimer=setTimeout(()=>dbPost('save-chat',{messages:chatHistory}),2000);
+}
+
+// ── SCENARIOS ─────────────────────────────────────────
+let currentSliders={s1:0,s2:0,s3:50,s4:0,s5:0};
+function captureSliders(){
+  return {
+    s1:+document.getElementById('s1').value,
+    s2:+document.getElementById('s2').value,
+    s3:+document.getElementById('s3').value,
+    s4:+document.getElementById('s4').value,
+    s5:+document.getElementById('s5').value,
+  };
+}
+function applySliders(sliders){
+  Object.entries(sliders).forEach(([k,v])=>{
+    const el=document.getElementById(k);
+    if(el){el.value=v;}
+  });
+  simUpdate();
+}
+async function saveScenario(){
+  const name=document.getElementById('scenarioName').value.trim();
+  if(!name){alert('Give this scenario a name first.');return;}
+  const sliders=captureSliders();
+  await dbPost('save-scenario',{name,sliders});
+  document.getElementById('scenarioName').value='';
+  await loadScenarios();
+}
+async function loadScenarios(){
+  const scenarios=await dbGet('get-scenarios');
+  const el=document.getElementById('scenariosList');
+  if(!scenarios||scenarios.length===0){
+    el.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">No saved scenarios yet. Set up a What-if sim and save it here.</div>';
+    return;
+  }
+  el.innerHTML=scenarios.map(s=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:500;color:var(--text)">${s.name}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${new Date(s.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button onclick="loadScenario(${JSON.stringify(s.sliders).replace(/"/g,'&quot;')})" style="background:var(--surface2);border:1px solid var(--border);color:var(--accent);padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">Load</button>
+        <button onclick="deleteScenario('${s.id}')" style="background:var(--surface2);border:1px solid var(--border);color:var(--danger);padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">✕</button>
+      </div>
+    </div>`).join('');
+}
+function loadScenario(sliders){
+  applySliders(sliders);
+  nav(document.querySelector('[onclick*="whatif"]'),'whatif');
+}
+async function deleteScenario(id){
+  await dbPost('delete-scenario',{id});
+  await loadScenarios();
+}
+
+// ── NOTES ─────────────────────────────────────────────
+let activeNoteId=null;
+async function loadNotes(){
+  const notes=await dbGet('get-notes');
+  const el=document.getElementById('notesList');
+  if(!notes||notes.length===0){
+    el.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">No notes yet.</div>';
+    return;
+  }
+  el.innerHTML=notes.map(n=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openNote('${n.id}','${encodeURIComponent(n.title)}','${encodeURIComponent(n.content)}')">
+      <div>
+        <div style="font-size:13px;font-weight:500;color:var(--text)">${n.title||'Untitled'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${n.content?.slice(0,60)||''}${n.content?.length>60?'…':''}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">${new Date(n.updated_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+      </div>
+      <button onclick="event.stopPropagation();deleteNote('${n.id}')" style="background:var(--surface2);border:1px solid var(--border);color:var(--danger);padding:4px 8px;border-radius:5px;font-size:11px;cursor:pointer;flex-shrink:0;margin-left:8px">✕</button>
+    </div>`).join('');
+}
+function openNote(id,title,content){
+  activeNoteId=id;
+  document.getElementById('noteTitle').value=decodeURIComponent(title);
+  document.getElementById('noteContent').value=decodeURIComponent(content);
+  document.getElementById('noteSaveStatus').textContent='Editing saved note';
+}
+function newNote(){
+  activeNoteId=null;
+  document.getElementById('noteTitle').value='';
+  document.getElementById('noteContent').value='';
+  document.getElementById('noteSaveStatus').textContent='New note — click Save to store it';
+}
+async function saveNote(){
+  const title=document.getElementById('noteTitle').value.trim()||'Untitled';
+  const content=document.getElementById('noteContent').value.trim();
+  await dbPost('save-note',{id:activeNoteId,title,content});
+  document.getElementById('noteSaveStatus').textContent=`✓ Saved at ${new Date().toLocaleTimeString()}`;
+  await loadNotes();
+}
+async function deleteNote(id){
+  await dbPost('delete-note',{id});
+  if(activeNoteId===id)newNote();
+  await loadNotes();
+}
+</script>
+
+</body>
+</html>
