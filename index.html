@@ -79,6 +79,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 input[type=range]{width:100%;accent-color:var(--accent);height:4px;cursor:pointer}
 .sim-result{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:12px;margin-top:10px;text-align:center}
 .sim-result .big{font-size:26px;font-weight:700;font-family:'Space Mono',monospace;color:var(--accent)}
+.share-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:10px;padding:7px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;font-family:'Space Mono',monospace;letter-spacing:.5px;cursor:pointer;transition:border-color .15s,color .15s}
+.share-btn:hover{border-color:var(--accent);color:var(--accent)}
+.share-toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--surface2);border:1px solid var(--accent2);color:var(--accent2);padding:8px 18px;border-radius:6px;font-size:11px;font-family:'Space Mono',monospace;letter-spacing:1px;z-index:2000;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none}
+.share-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* TABLE */
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -288,6 +292,7 @@ tr:hover td{background:var(--surface2)}
       <div style="margin-top:8px;font-size:12px;color:var(--muted)" id="simNote">Adjust sliders to model scenarios</div>
       <div id="simBars" style="margin-top:12px"></div>
     </div>
+    <button class="share-btn" onclick="shareScenario()">⬡ Share Scenario</button>
   </div>
 </div>
 
@@ -552,6 +557,12 @@ function onSignIn(user) {
   if (apiKey) document.getElementById('apiKeySetup').style.display = 'none';
   if (!_appInitialized) { _appInitialized = true; init(); }
   loadPersistedData();
+  const _sp=new URLSearchParams(window.location.search);
+  if(['s1','s2','s3','s4','s5'].some(k=>_sp.has(k))){
+    applySliders({s1:+(_sp.get('s1')??0),s2:+(_sp.get('s2')??0),s3:+(_sp.get('s3')??50),s4:+(_sp.get('s4')??0),s5:+(_sp.get('s5')??0)});
+    nav(document.querySelector('[onclick*="whatif"]'),'whatif');
+    history.replaceState(null,'',window.location.pathname);
+  }
 }
 
 function onSignOut() {
@@ -990,6 +1001,17 @@ function loadScenario(sliders){
   applySliders(sliders);
   nav(document.querySelector('[onclick*="whatif"]'),'whatif');
 }
+function shareScenario(){
+  const p=captureSliders();
+  const url=new URL(window.location.href);
+  url.search='';
+  ['s1','s2','s3','s4','s5'].forEach(k=>url.searchParams.set(k,p[k]));
+  navigator.clipboard.writeText(url.toString()).then(()=>{
+    const t=document.getElementById('shareToast');
+    t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'),2200);
+  });
+}
 async function deleteScenario(id){
   await dbPost('delete-scenario',{id});
   await loadScenarios();
@@ -1255,5 +1277,6 @@ function renderVoterCols() {
 }
 </script>
 
+<div class="share-toast" id="shareToast">LINK COPIED</div>
 </body>
 </html>
