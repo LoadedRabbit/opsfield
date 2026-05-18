@@ -83,6 +83,17 @@ input[type=range]{width:100%;accent-color:var(--accent);height:4px;cursor:pointe
 .share-btn:hover{border-color:var(--accent);color:var(--accent)}
 .share-toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--surface2);border:1px solid var(--accent2);color:var(--accent2);padding:8px 18px;border-radius:6px;font-size:11px;font-family:'Space Mono',monospace;letter-spacing:1px;z-index:2000;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none}
 .share-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* PRIORITY LIST */
+.pri-party-group{display:flex}
+.pri-party-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);padding:5px 13px;font-size:11px;font-family:'Space Mono',monospace;cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.pri-party-btn:first-child{border-radius:5px 0 0 5px}
+.pri-party-btn:last-child{border-radius:0 5px 5px 0}
+.pri-party-btn:not(:first-child){border-left:none}
+.pri-party-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.pri-party-btn[data-party="R"].active{background:var(--rep);border-color:var(--rep)}
+.pri-party-btn[data-party="I"].active{background:var(--accent3);border-color:var(--accent3);color:#000}
+.pri-export-btn{background:var(--surface2);border:1px solid var(--border);color:var(--accent2);padding:4px 10px;border-radius:5px;font-size:11px;font-family:'Space Mono',monospace;cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.pri-export-btn:hover{border-color:var(--accent2);background:rgba(16,185,129,.06)}
 
 /* TABLE */
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -390,6 +401,23 @@ tr:hover td{background:var(--surface2)}
     <div class="card">
       <div class="card-title">Column breakdown</div>
       <div id="vf-col-breakdown" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+    </div>
+
+    <div class="card" id="vf-priority-card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        Contact Priority List
+        <button class="pri-export-btn" onclick="exportPriorityCSV()">⬇ Export CSV</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Ranked by turnout gap · party alignment · district data · top 50 shown</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;letter-spacing:.8px">TARGET PARTY</span>
+        <div class="pri-party-group" id="priPartyGroup">
+          <button class="pri-party-btn active" data-party="D" onclick="setPriorityParty('D')">Democrat</button>
+          <button class="pri-party-btn" data-party="R" onclick="setPriorityParty('R')">Republican</button>
+          <button class="pri-party-btn" data-party="I" onclick="setPriorityParty('I')">Independent</button>
+        </div>
+      </div>
+      <div id="pri-table-wrap" class="csv-wrap" style="max-height:420px"></div>
     </div>
   </div>
 </div>
@@ -1092,6 +1120,7 @@ function loadVoterFile(e) {
     renderVoterSummary();
     renderVoterQuickBtns();
     renderVoterCols();
+    renderPriorityList();
   };
   reader.readAsText(f);
 }
@@ -1241,6 +1270,179 @@ function renderVoterQuickBtns() {
   document.getElementById('vf-quick-btns').innerHTML = btns.map(b =>
     `<div class="qbtn" onclick="document.getElementById('vfQuestion').value=${JSON.stringify(b)};askVoterQuestion()">${b}</div>`
   ).join('');
+}
+
+// ── CONTACT PRIORITY LIST ─────────────────────────────
+let priorityTargetParty = 'D';
+
+function setPriorityParty(party) {
+  priorityTargetParty = party;
+  document.querySelectorAll('.pri-party-btn').forEach(b => b.classList.toggle('active', b.dataset.party === party));
+  renderPriorityList();
+}
+
+function detectPriorityFields(cols) {
+  const cl = cols.map(c => c.toLowerCase());
+  const find = terms => cols[cl.findIndex(c => terms.some(t => c.includes(t)))] || null;
+  return {
+    firstName: find(['first_name','firstname','fname','first','given']),
+    lastName:  find(['last_name','lastname','lname','last','surname','family']),
+    fullName:  find(['full_name','fullname','voter_name']),
+    address:   find(['res_street','address','addr','street','residence','house_num','mail_addr']),
+    party:     find(['party','affiliation','party_cd','party_reg','registration']),
+    district:  find(['congressional','senate_dist','house_dist','district','precinct','ward']),
+    voted:     cols.filter(c => { const lc = c.toLowerCase(); return lc.startsWith('voted') || /^[gpe]20\d{2}/.test(lc) || /general_20|primary_20/.test(lc); }),
+  };
+}
+
+function scoreVoter(row, fields, targetParty) {
+  let score = 0;
+
+  // Party alignment (0-40 pts)
+  if (fields.party) {
+    const p = (row[fields.party] || '').trim().toUpperCase();
+    const isD = /^D(EM)?/.test(p);
+    const isR = /^R(EP)?/.test(p);
+    const isI = /^(I(ND)?|NPA|UNA|UNR|NON|LIB|GRE)/.test(p) || (!isD && !isR && p.length > 0);
+    if (targetParty === 'D') score += isD ? 40 : isI ? 22 : isR ? 2 : 12;
+    else if (targetParty === 'R') score += isR ? 40 : isI ? 22 : isD ? 2 : 12;
+    else score += (isI || (!isD && !isR && p.length > 0)) ? 40 : isD || isR ? 10 : 20;
+  } else {
+    score += 20;
+  }
+
+  // Turnout gap (0-45 pts): fewer elections voted = higher priority
+  if (fields.voted.length > 0) {
+    let votedCount = 0;
+    for (const col of fields.voted) {
+      const v = (row[col] || '').trim().toLowerCase();
+      if (v && v !== '0' && v !== 'n' && v !== 'no' && v !== 'false') votedCount++;
+    }
+    const missRate = 1 - votedCount / fields.voted.length;
+    score += Math.round(missRate * 45);
+  } else {
+    score += 22;
+  }
+
+  // District/precinct data present (0-10 pts)
+  if (fields.district) {
+    if ((row[fields.district] || '').trim()) score += 10;
+  } else {
+    score += 5;
+  }
+
+  // Recency bonus: didn't vote in most recent cycle (0-5 pts)
+  if (fields.voted.length > 0) {
+    const recent = fields.voted[fields.voted.length - 1];
+    const v = (row[recent] || '').trim().toLowerCase();
+    if (!v || v === '0' || v === 'n' || v === 'no' || v === 'false') score += 5;
+  }
+
+  return Math.min(100, score);
+}
+
+function renderPriorityList() {
+  if (!voterFileData) return;
+  const { rows, cols } = voterFileData;
+  const fields = detectPriorityFields(cols);
+
+  const scored = rows
+    .map(row => ({ row, score: scoreVoter(row, fields, priorityTargetParty) }))
+    .sort((a, b) => b.score - a.score);
+
+  voterFileData._priorityScored = scored;
+  voterFileData._priorityFields = fields;
+
+  const top50 = scored.slice(0, 50);
+  const wrap = document.getElementById('pri-table-wrap');
+  if (!top50.length) { wrap.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:10px 0">No voters found.</div>'; return; }
+
+  const getName = row => {
+    if (fields.fullName && row[fields.fullName]) return row[fields.fullName];
+    const fn = fields.firstName ? (row[fields.firstName] || '') : '';
+    const ln = fields.lastName  ? (row[fields.lastName]  || '') : '';
+    return [fn, ln].filter(Boolean).join(' ') || '—';
+  };
+  const getAddr = row => fields.address ? ((row[fields.address] || '').trim() || '—') : '—';
+  const getParty = row => fields.party ? ((row[fields.party] || '').trim() || '—') : '—';
+  const getLastVoted = row => {
+    if (!fields.voted.length) return '—';
+    for (let i = fields.voted.length - 1; i >= 0; i--) {
+      const v = (row[fields.voted[i]] || '').trim().toLowerCase();
+      if (v && v !== '0' && v !== 'n' && v !== 'no' && v !== 'false') {
+        const m = fields.voted[i].match(/20\d{2}/);
+        return m ? m[0] : fields.voted[i];
+      }
+    }
+    return 'Never';
+  };
+  const partyClr = p => { const u = p.toUpperCase(); return /^D(EM)?/.test(u) ? 'var(--dem)' : /^R(EP)?/.test(u) ? 'var(--rep)' : 'var(--accent3)'; };
+  const scoreClr = s => s >= 75 ? 'var(--accent2)' : s >= 50 ? 'var(--accent)' : s >= 30 ? 'var(--accent3)' : 'var(--muted)';
+
+  let html = `<table class="csv-table" style="min-width:540px"><thead><tr>
+    <th style="width:26px">#</th><th>Name</th><th>Address</th><th>Party</th><th>Last Voted</th><th style="width:120px">Priority</th>
+  </tr></thead><tbody>`;
+
+  top50.forEach(({ row, score }, i) => {
+    const p = getParty(row);
+    const pc = partyClr(p);
+    const sc = scoreClr(score);
+    const addr = getAddr(row);
+    html += `<tr>
+      <td style="color:var(--dim);font-family:'Space Mono',monospace;font-size:10px">${i + 1}</td>
+      <td style="font-weight:500;white-space:nowrap">${getName(row)}</td>
+      <td style="color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${addr}">${addr}</td>
+      <td><span style="font-size:10px;padding:2px 7px;border-radius:20px;background:${pc}22;color:${pc};font-family:'Space Mono',monospace;white-space:nowrap">${p}</span></td>
+      <td style="color:var(--muted);font-family:'Space Mono',monospace;font-size:11px">${getLastVoted(row)}</td>
+      <td><div style="display:flex;align-items:center;gap:6px">
+        <span style="font-family:'Space Mono',monospace;font-size:12px;color:${sc};min-width:26px;text-align:right">${score}</span>
+        <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${score}%;background:${sc}"></div>
+        </div>
+      </div></td>
+    </tr>`;
+  });
+
+  wrap.innerHTML = html + '</tbody></table>';
+}
+
+function exportPriorityCSV() {
+  if (!voterFileData) return;
+  if (!voterFileData._priorityScored) renderPriorityList();
+  const { _priorityScored: scored, _priorityFields: fields, cols } = voterFileData;
+
+  const getName = row => {
+    if (fields.fullName && row[fields.fullName]) return row[fields.fullName];
+    return [fields.firstName ? row[fields.firstName] : '', fields.lastName ? row[fields.lastName] : ''].filter(Boolean).join(' ');
+  };
+  const getLastVoted = row => {
+    if (!fields.voted.length) return '';
+    for (let i = fields.voted.length - 1; i >= 0; i--) {
+      const v = (row[fields.voted[i]] || '').trim().toLowerCase();
+      if (v && v !== '0' && v !== 'n' && v !== 'no' && v !== 'false') {
+        const m = fields.voted[i].match(/20\d{2}/); return m ? m[0] : fields.voted[i];
+      }
+    }
+    return 'Never';
+  };
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
+  const header = ['Rank','Priority Score','Name','Address','Party','Last Voted', ...cols].join(',');
+  const dataRows = scored.map(({ row, score }, i) => [
+    i + 1, score,
+    esc(getName(row)),
+    esc(fields.address ? row[fields.address] || '' : ''),
+    esc(fields.party   ? row[fields.party]   || '' : ''),
+    esc(getLastVoted(row)),
+    ...cols.map(c => esc(row[c])),
+  ].join(','));
+
+  const blob = new Blob([[header, ...dataRows].join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `opsfield_priority_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function renderVoterCols() {
