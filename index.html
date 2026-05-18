@@ -199,6 +199,7 @@ tr:hover td{background:var(--surface2)}
   <div class="nav-item" onclick="nav(this,'districts')">⊞ Districts</div>
   <div class="nav-item" onclick="nav(this,'scenarios')">⊕ Saved scenarios</div>
   <div class="nav-item" onclick="nav(this,'notes')">✎ Notes</div>
+  <div class="nav-item" onclick="nav(this,'voterfile')">◎ Voter file</div>
   <div class="nav-section" style="margin-top:6px">Data</div>
   <div class="upload-zone" id="uploadZone">
     <div style="font-size:16px;margin-bottom:3px">⬆</div>
@@ -356,6 +357,53 @@ tr:hover td{background:var(--surface2)}
   <div class="card">
     <div class="card-title">All notes</div>
     <div id="notesList"><div style="color:var(--muted);font-size:12px;padding:8px 0">No notes yet.</div></div>
+  </div>
+</div>
+
+<!-- VOTER FILE -->
+<div class="panel" id="panel-voterfile">
+  <div class="panel-title">Voter file analysis</div>
+  <div class="panel-sub">Upload a CSV voter file · ask questions in plain English · raw data stays in your browser</div>
+
+  <div id="vf-upload" class="card" style="text-align:center;padding:32px 20px;cursor:pointer"
+    ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+    ondragleave="this.style.borderColor='var(--border)'"
+    ondrop="event.preventDefault();this.style.borderColor='var(--border)';vfDropHandler(event)"
+    onclick="document.getElementById('vfFileIn').click()">
+    <div style="font-size:28px;margin-bottom:10px;color:var(--muted)">⬆</div>
+    <div style="font-size:14px;font-weight:500;margin-bottom:5px">Drop your voter file here</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Accepts CSV · any size · processed locally in your browser</div>
+    <button style="background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:12px;font-family:'Space Mono',monospace;cursor:pointer;letter-spacing:.5px;pointer-events:none">CHOOSE FILE ↗</button>
+    <input type="file" accept=".csv" style="display:none" id="vfFileIn" onchange="loadVoterFile(event)">
+    <div style="font-size:10px;color:var(--dim);margin-top:14px">Auto-detected fields: party · age · district · gender · vote history</div>
+  </div>
+
+  <div id="vf-loaded" style="display:none">
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        File summary
+        <button onclick="vfReset()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:2px 8px;border-radius:4px;font-size:10px;cursor:pointer">Replace file</button>
+      </div>
+      <div id="vf-summary-body"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Ask about this voter file</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px" id="vf-quick-btns"></div>
+      <div style="display:flex;gap:7px">
+        <input id="vfQuestion" placeholder="e.g. How many registered Democrats under 35?" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none;transition:border .15s" onkeydown="if(event.key==='Enter')askVoterQuestion()" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+        <button onclick="askVoterQuestion()" id="vfAskBtn" style="background:var(--accent);color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:11px;font-family:'Space Mono',monospace;cursor:pointer;white-space:nowrap;transition:opacity .15s">ASK ↗</button>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-top:6px">Only column-level statistics are sent to Claude — raw voter records never leave your browser</div>
+    </div>
+    <div class="card" id="vf-answer-card" style="display:none">
+      <div style="font-size:10px;font-family:'Space Mono',monospace;color:var(--accent);letter-spacing:1px;margin-bottom:6px">OPSFIELD AI</div>
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px" id="vf-answer-q"></div>
+      <div id="vf-answer-body" style="font-size:13px;line-height:1.7;color:var(--text)"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Column breakdown</div>
+      <div id="vf-col-breakdown" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+    </div>
   </div>
 </div>
 
@@ -942,6 +990,222 @@ async function deleteNote(id){
   await dbPost('delete-note',{id});
   if(activeNoteId===id)newNote();
   await loadNotes();
+}
+
+// ── VOTER FILE ────────────────────────────────────────
+let voterFileData = null;
+
+function vfDropHandler(e) {
+  const f = e.dataTransfer.files[0];
+  if (f) loadVoterFile({ target: { files: [f] } });
+}
+
+function vfReset() {
+  voterFileData = null;
+  document.getElementById('vf-upload').style.display = 'block';
+  document.getElementById('vf-loaded').style.display = 'none';
+  document.getElementById('vf-answer-card').style.display = 'none';
+  document.getElementById('vfFileIn').value = '';
+}
+
+function loadVoterFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const parsed = Papa.parse(ev.target.result, { header: true, skipEmptyLines: true, dynamicTyping: false });
+    const rows = parsed.data, cols = parsed.meta.fields || [];
+    if (!rows.length || !cols.length) { alert('File appears empty or could not be parsed as CSV.'); return; }
+    voterFileData = { filename: f.name, rows, cols, stats: computeVoterStats(rows, cols) };
+    document.getElementById('vf-upload').style.display = 'none';
+    document.getElementById('vf-loaded').style.display = 'block';
+    document.getElementById('vf-answer-card').style.display = 'none';
+    renderVoterSummary();
+    renderVoterQuickBtns();
+    renderVoterCols();
+  };
+  reader.readAsText(f);
+}
+
+function computeVoterStats(rows, cols) {
+  const n = rows.length, stats = {};
+  for (const col of cols) {
+    const vals = rows.map(r => (r[col] == null ? '' : String(r[col])).trim()).filter(v => v !== '');
+    const unique = new Set(vals);
+    // Treat as categorical if low cardinality or <5% of rows are unique values
+    if (unique.size <= 60 || unique.size / n < 0.05) {
+      const counts = {};
+      vals.forEach(v => { counts[v] = (counts[v] || 0) + 1; });
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 12);
+      stats[col] = { type: 'cat', counts: Object.fromEntries(top), unique: unique.size, total: vals.length };
+    } else {
+      const nums = vals.map(Number).filter(x => !isNaN(x));
+      if (nums.length > vals.length * 0.75) {
+        const sorted = [...nums].sort((a, b) => a - b);
+        const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+        stats[col] = { type: 'num', min: sorted[0], max: sorted[sorted.length - 1], avg: +avg.toFixed(1), median: sorted[Math.floor(sorted.length / 2)], count: nums.length };
+      } else {
+        stats[col] = { type: 'text', unique: unique.size, sample: [...unique].slice(0, 3) };
+      }
+    }
+  }
+  return stats;
+}
+
+function detectVoterFields(cols) {
+  const cl = cols.map(c => c.toLowerCase());
+  const find = terms => cols[cl.findIndex(c => terms.some(t => c.includes(t)))] || null;
+  return {
+    party:    find(['party', 'affiliation', 'party_cd', 'party_reg', 'registration']),
+    age:      find(['age', 'birth_year', 'dob', 'birthdate', 'date_of_birth']),
+    district: find(['congressional', 'senate_dist', 'house_dist', 'district', 'precinct', 'ward']),
+    city:     find(['city', 'municipality', 'town', 'muni']),
+    zip:      find(['zip', 'postal']),
+    gender:   find(['gender', 'sex']),
+    voted:    cols.filter(c => { const lc = c.toLowerCase(); return lc.startsWith('voted') || /^[gpe]20\d{2}/.test(lc); }),
+  };
+}
+
+function buildVoterContext() {
+  if (!voterFileData) return '';
+  const { filename, rows, cols, stats } = voterFileData;
+  const detected = detectVoterFields(cols);
+  const PII = /phone|email|cell|mobile|ssn|social_sec|tax_id|dl_num|license_num/i;
+  let ctx = `Voter file: "${filename}" — ${rows.length.toLocaleString()} voters, ${cols.length} columns\n\nColumn distributions:\n`;
+  for (const col of cols) {
+    if (PII.test(col)) { ctx += `- ${col}: [redacted for privacy]\n`; continue; }
+    const s = stats[col];
+    if (!s) continue;
+    if (s.type === 'cat') {
+      const entries = Object.entries(s.counts)
+        .map(([k, v]) => `${k || '(blank)'}=${v.toLocaleString()}(${(v / rows.length * 100).toFixed(1)}%)`).join(', ');
+      ctx += `- ${col} [${s.unique} values]: ${entries}\n`;
+    } else if (s.type === 'num') {
+      ctx += `- ${col} [numeric]: min=${s.min}, max=${s.max}, avg=${s.avg}, median=${s.median}\n`;
+    } else {
+      ctx += `- ${col} [text, ${s.unique} unique values]\n`;
+    }
+  }
+  ctx += `\nDetected fields: ${JSON.stringify(detected)}\n\n`;
+  ctx += `Answer with precise numbers from the distributions above. For compound queries (e.g. "Dems under 35") note when cross-tabulation is needed and give your best estimate from marginals.`;
+  return ctx;
+}
+
+async function askVoterQuestion() {
+  if (!apiKey) { alert('Add your Anthropic API key in the AI panel first.'); return; }
+  if (!voterFileData) return;
+  const input = document.getElementById('vfQuestion');
+  const btn = document.getElementById('vfAskBtn');
+  const q = input.value.trim();
+  if (!q) return;
+  btn.disabled = true; btn.textContent = '...';
+  const ansCard = document.getElementById('vf-answer-card');
+  ansCard.style.display = 'block';
+  document.getElementById('vf-answer-q').textContent = q;
+  document.getElementById('vf-answer-body').innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+  ansCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 600,
+        system: `You are a voter data analyst. Answer questions about the voter file below using the column-level statistics provided. Be concise and specific.\n\n${buildVoterContext()}`,
+        messages: [{ role: 'user', content: q }]
+      })
+    });
+    const data = await res.json();
+    const reply = data.error
+      ? `Error: ${data.error.message}`
+      : (data.content?.find(c => c.type === 'text')?.text || 'No response.');
+    document.getElementById('vf-answer-body').innerHTML = reply.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>');
+  } catch(err) {
+    document.getElementById('vf-answer-body').textContent = 'Network error. Check your connection.';
+  }
+  btn.disabled = false; btn.textContent = 'ASK ↗';
+  input.value = '';
+}
+
+function renderVoterSummary() {
+  const { filename, rows, cols, stats } = voterFileData;
+  const detected = detectVoterFields(cols);
+  let html = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+    <div style="text-align:center"><div class="metric-val" style="color:var(--accent)">${rows.length.toLocaleString()}</div><div class="metric-lbl">Voters</div></div>
+    <div style="text-align:center"><div class="metric-val" style="color:var(--accent2)">${cols.length}</div><div class="metric-lbl">Columns</div></div>
+    <div style="text-align:center"><div class="metric-val" style="color:var(--accent3);font-size:13px;padding-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${filename.replace(/\.[^.]+$/,'')}</div><div class="metric-lbl">File</div></div>
+  </div>`;
+  if (detected.party) {
+    const s = stats[detected.party];
+    if (s?.type === 'cat') {
+      html += `<div><div class="card-title" style="margin-bottom:8px">${detected.party} breakdown</div>`;
+      for (const [k, v] of Object.entries(s.counts).slice(0, 6)) {
+        const pct = (v / rows.length * 100).toFixed(1);
+        const isD = /^d(em(o(crat)?)?)?$/i.test(k.trim());
+        const isR = /^r(ep(ub(lican)?)?)?$/i.test(k.trim());
+        html += `<div style="margin-bottom:7px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+            <span style="color:var(--muted)">${k || '(blank)'}</span>
+            <span class="mono">${v.toLocaleString()} · ${pct}%</span>
+          </div>
+          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${isD ? 'var(--dem)' : isR ? 'var(--rep)' : 'var(--muted)'}"></div>
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+  }
+  document.getElementById('vf-summary-body').innerHTML = html;
+}
+
+function renderVoterQuickBtns() {
+  const detected = detectVoterFields(voterFileData.cols);
+  const btns = [
+    'How many voters are registered by party?',
+    ...(detected.age   ? ['What is the age distribution of voters?']          : []),
+    ...(detected.gender? ['What is the gender breakdown by party?']            : []),
+    ...(detected.district?['Which district has the most registered voters?']   : []),
+    ...(detected.voted?.length ? [`Who voted in ${detected.voted[0]}?`]        : []),
+    'Which voter segments should we prioritize for outreach?',
+    'What are the top cities in this file?',
+  ].slice(0, 5);
+  document.getElementById('vf-quick-btns').innerHTML = btns.map(b =>
+    `<div class="qbtn" onclick="document.getElementById('vfQuestion').value=${JSON.stringify(b)};askVoterQuestion()">${b}</div>`
+  ).join('');
+}
+
+function renderVoterCols() {
+  const { cols, stats, rows } = voterFileData;
+  const PII = /phone|email|cell|mobile|ssn|social_sec/i;
+  const html = cols.slice(0, 16).map(col => {
+    if (PII.test(col)) {
+      return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;opacity:.45">
+        <div style="font-size:10px;font-family:'Space Mono',monospace;color:var(--muted);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${col}</div>
+        <div style="font-size:9px;color:var(--dim)">redacted</div>
+      </div>`;
+    }
+    const s = stats[col];
+    if (!s) return '';
+    let content = '';
+    if (s.type === 'cat') {
+      content = Object.entries(s.counts).slice(0, 3).map(([k, v]) =>
+        `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:1px">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px">${k || '(blank)'}</span>
+          <span class="mono">${(v / rows.length * 100).toFixed(0)}%</span>
+        </div>`).join('');
+      if (s.unique > 3) content += `<div style="font-size:9px;color:var(--dim);margin-top:2px">+${s.unique - 3} more values</div>`;
+    } else if (s.type === 'num') {
+      content = `<div style="font-size:10px;color:var(--muted)">avg <span class="mono">${s.avg}</span><br>range <span class="mono">${s.min}–${s.max}</span></div>`;
+    } else {
+      content = `<div style="font-size:10px;color:var(--muted)">${s.unique} unique<br>${s.sample.slice(0,2).map(v=>`<span class="mono">${String(v).slice(0,12)}</span>`).join(', ')}</div>`;
+    }
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px">
+      <div style="font-size:10px;font-family:'Space Mono',monospace;color:var(--accent);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${col}">${col}</div>
+      ${content}
+    </div>`;
+  }).join('');
+  document.getElementById('vf-col-breakdown').innerHTML = html || '<div style="color:var(--muted);font-size:12px">No columns to display.</div>';
 }
 </script>
 
